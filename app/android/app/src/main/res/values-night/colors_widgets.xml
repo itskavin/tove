@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_surface">#FF1C1D21</color>
+    <color name="widget_tile">#FF2B3243</color>
+    <color name="widget_on_tile">#FFDCE3F3</color>
+    <color name="widget_on_surface">#FFE6E7EB</color>
+    <color name="widget_muted">#FFAEB1B8</color>
+    <color name="widget_accent">#FF6AA8FF</color>
+</resources>

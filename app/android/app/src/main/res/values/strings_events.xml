@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Instant notifications (EventsService). Agent and app names come from Dart (Brand). -->
+<resources>
+    <string name="events_channel_name">Connection</string>
+    <string name="events_channel_description">A silent notification while Tove keeps its small connection to your server open for instant notifications</string>
+    <string name="events_ongoing_title">%1$s is connected</string>
+    <string name="events_status_connected">Instant notifications are on</string>
+    <string name="events_status_connecting">Connecting…</string>
+    <string name="events_status_reconnecting">Reconnecting…</string>
+    <string name="events_status_offline">Waiting for a network</string>
+    <string name="replies_channel_name">Replies</string>
+    <string name="replies_channel_description">A reply or task finished while you were away</string>
+    <string name="events_reply_body">Reply ready</string>
+    <string name="events_failed">Couldn’t finish the reply</string>
+    <string name="events_failed_with">Couldn’t finish the reply: %1$s</string>
+    <string name="events_task_heading">%1$s finished a task</string>
+    <string name="events_task_body">The result is in the chat</string>
+    <string name="events_task_failed">The task didn’t finish. Open the chat for details.</string>
+    <string name="events_test_heading">%1$s notifications work</string>
+    <string name="events_test_body">This is a test notification</string>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_ask_label">Ask Tove</string>
+    <string name="widget_ask_description">Start a chat with the keyboard up, or tap the mic for live voice.</string>
+    <string name="widget_quick_label">Tove shortcuts</string>
+    <string name="widget_quick_description">New chat, live voice and your last chat.</string>
+    <string name="widget_chat">Chat</string>
+    <string name="widget_live">Live</string>
+    <string name="widget_live_description">Start live voice</string>
+    <string name="widget_last_chat_none">Your last chat shows here</string>
+    <string name="widget_last_chat_description">Open your last chat</string>
+    <!-- Shown by the system as the assistant activity's label. -->
+    <string name="assist_label">Tove live voice</string>
+</resources>

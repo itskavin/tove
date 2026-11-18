@@ -1,0 +1,8 @@
+# Versions the bridge is tested with (Python 3.12). aiortc and av ship manylinux wheels with their native
+# libraries (ffmpeg, opus, vpx, srtp) bundled, so no system packages are needed on x86_64 or arm64.
+aiohttp==3.14.5
+aiortc==1.16.0
+av==19.0.2
+numpy==2.5.4
+# QR codes for pairing (tove_pair.py); pure Python, BSD-3-Clause.
+segno==1.6.6

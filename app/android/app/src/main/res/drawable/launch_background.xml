@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch screen: the theme's background with the Tove badge (the mark on a
+     black disc, drawable-*dpi/splash_badge.png from tool/brand_icons.py) in the
+     middle until Flutter draws its first frame. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="?android:colorBackground" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_badge" />
+    </item>
+</layer-list>

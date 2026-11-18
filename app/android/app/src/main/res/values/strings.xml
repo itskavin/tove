@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tove</string>
+
+    <!-- Call notification. Lock-screen safe: never put transcript or task text here. -->
+    <string name="call_channel_name">Live voice session</string>
+    <string name="call_channel_description">Shows while a Tove voice session is using the microphone, with Mute and End controls.</string>
+    <string name="call_title">Tove</string>
+    <string name="call_text_live">Voice session in progress</string>
+    <string name="call_text_muted">Muted · voice session in progress</string>
+    <string name="call_text_ending">Ending voice session…</string>
+    <string name="call_person">Hermes</string>
+    <string name="call_action_mute">Mute</string>
+    <string name="call_action_unmute">Unmute</string>
+    <string name="call_action_end">End</string>
+
+    <!-- Returned to Flutter as the startCall warning. -->
+    <string name="call_warning_notifications_off">Notifications are off for Tove, so Mute and End will not appear in the notification shade or on the lock screen. The voice session still runs; end it from the app.</string>
+</resources>

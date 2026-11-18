@@ -1,0 +1,11 @@
+name: image-search
+version: "0.1.0"
+description: Image search through your own SearXNG (images category). Returns real image URLs with
+  the page each image came from, so answers can show relevant pictures with their source. No API key, no paid
+  service, no image bytes fetched by Hermes.
+author: Tove contributors
+kind: standalone
+platforms:
+  - linux
+provides_tools:
+  - image_search

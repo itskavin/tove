@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home-screen widget colours. Android 12+ uses the wallpaper's Material You
+     palette (values-v31, values-night-v31); older versions use these. -->
+<resources>
+    <color name="widget_surface">#FFF2F3F7</color>
+    <color name="widget_tile">#FFDCE3F3</color>
+    <color name="widget_on_tile">#FF14213D</color>
+    <color name="widget_on_surface">#FF1B1C20</color>
+    <color name="widget_muted">#FF5C5F67</color>
+    <color name="widget_accent">#FF2F6FDB</color>
+</resources>

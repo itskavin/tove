@@ -1,0 +1,80 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+**/ephemeral/
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+**/flutter_native_integration.env
+coverage/
+**/failures/
+
+# Android / Gradle
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/key.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# iOS / macOS
+**/Pods/
+*.mobileprovision
+*.xcuserstate
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+
+# Secrets / local data
+.env
+.env.*
+!*.env.example
+bridge.env
+*secrets*
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Bridge runtime data and local copies of the examples (server/)
+server/compose.yaml
+server/compose.override.yaml
+codex-home/
+openai-usage.json
+uploads/
+image-cache/
+web-releases/
+
+# QA and debugging artifacts
+*.pcm
+*.hprof
+logcat-*.txt
+qa/
+.qa/
+evidence/

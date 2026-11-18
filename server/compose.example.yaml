@@ -1,0 +1,35 @@
+# Example Docker Compose file for the bridge. Copy it to compose.yaml, copy bridge.env.example to bridge.env,
+# fill in the keys, then follow SELF-HOSTING.md (first run: the Codex device login).
+services:
+  bridge:
+    build: .
+    image: gpt-live-bridge:local
+    restart: unless-stopped
+    env_file: bridge.env
+    environment:
+      # The container's own layout; bridge.env does not need to set these.
+      BRIDGE_HOST: 0.0.0.0
+      BRIDGE_PORT: "8787"
+      BRIDGE_DATA_DIR: /data
+      CODEX_HOME: /data/codex-home
+    volumes:
+      - bridge-data:/data
+      # Use your own Codex CLI instead of the one in the image:
+      # - /usr/local/bin/codex:/usr/local/bin/codex:ro
+    ports:
+      # Loopback only. Put TLS in front (reverse proxy or Tailscale); never publish this port to the internet as is.
+      - "127.0.0.1:8787:8787"
+    extra_hosts:
+      # Lets HERMES_API_URL=http://host.docker.internal:8642/v1 reach Hermes running on the host.
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+
+volumes:
+  bridge-data:

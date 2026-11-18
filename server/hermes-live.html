@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Hermes Live</title>
+<style>
+:root{--bg:#0f1115;--panel:#181b22;--line:#262b35;--text:#eef1f6;--mute:#8e97a8;--accent:#6aa8ff;--live:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--you:#243044;--bot:#1d2129}
+@media (prefers-color-scheme:light){:root{--bg:#f4f6fa;--panel:#fff;--line:#dfe3ea;--text:#12151b;--mute:#5d6678;--accent:#2563eb;--live:#12a066;--warn:#b86e00;--bad:#d03a3a;--you:#dbe7ff;--bot:#eceff4}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+main{display:flex;flex-direction:column;height:100%;max-width:640px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) 16px max(12px,env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0 10px}
+h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
+#state{font-size:13px;color:var(--mute);display:flex;align-items:center;gap:8px}
+#state i{width:9px;height:9px;border-radius:50%;background:var(--mute);display:inline-block}
+body.live #state i{background:var(--live);box-shadow:0 0 0 0 var(--live);animation:pulse 1.8s infinite}
+body.connecting #state i{background:var(--warn)}
+body.error #state i{background:var(--bad)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 60%,transparent)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+#log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 0;scroll-behavior:smooth}
+.empty{margin:auto;text-align:center;color:var(--mute);max-width:30ch}
+.b{max-width:86%;padding:9px 13px;border-radius:16px;word-wrap:break-word;white-space:pre-wrap}
+.b.you{align-self:flex-end;background:var(--you);border-bottom-right-radius:5px}
+.b.bot{align-self:flex-start;background:var(--bot);border-bottom-left-radius:5px;border:1px solid var(--line)}
+.b.live::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--mute);margin-left:6px;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+.task{align-self:stretch;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:9px 12px;font-size:14px;display:flex;gap:10px;align-items:flex-start}
+.task .dot{margin-top:5px;width:9px;height:9px;border-radius:50%;flex:none;background:var(--warn);animation:blink 1s infinite}
+.task.done .dot{background:var(--live);animation:none}.task.failed .dot{background:var(--bad);animation:none}
+.task small{display:block;color:var(--mute)}
+footer{display:flex;flex-direction:column;gap:12px;align-items:center;padding-top:10px}
+#row{display:flex;align-items:center;justify-content:center;gap:18px}
+button{font:inherit;color:var(--text);cursor:pointer}
+#call{width:84px;height:84px;border-radius:50%;border:0;background:var(--live);color:#04140c;font-weight:700;font-size:15px;box-shadow:0 6px 24px color-mix(in srgb,var(--live) 35%,transparent);transition:transform .12s,background .2s}
+#call:active{transform:scale(.95)}
+body.live #call,body.connecting #call{background:var(--bad);color:#fff;box-shadow:0 6px 24px color-mix(in srgb,var(--bad) 35%,transparent)}
+.sm{width:52px;height:52px;border-radius:50%;border:1px solid var(--line);background:var(--panel);font-size:13px}
+.sm[aria-pressed=true]{background:var(--warn);color:#201400;border-color:transparent}
+.sm:disabled{opacity:.4}
+#opts{display:flex;gap:10px;align-items:center;color:var(--mute);font-size:13px}
+select,#keybtn{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px}
+#note{min-height:1.2em;font-size:12.5px;color:var(--mute);text-align:center}
+#note.err{color:var(--bad)}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Hermes</h1><span id="state"><i></i><span id="stateText">Ready</span></span></header>
+  <section id="log" aria-live="polite"><div class="empty" id="empty">Tap the green button, then just talk. Interrupt any time, like a phone call.</div></section>
+  <footer>
+    <div id="row">
+      <button class="sm" id="mute" aria-pressed="false" disabled aria-label="Mute microphone">Mute</button>
+      <button id="call" aria-label="Start call">Call</button>
+      <span class="sm" aria-hidden="true" style="visibility:hidden"></span>
+    </div>
+    <div id="opts"><label>Voice <select id="voice"></select></label><button id="keybtn" type="button">Access key</button></div>
+    <div id="note"></div>
+  </footer>
+</main>
+<audio id="remote" autoplay playsinline></audio>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const VOICES = ["cove","juniper","sol","ember","vale","maple","spruce","breeze","arbor","aube","bubbie"];
+const store = { get(k){ try { return localStorage.getItem(k) || "" } catch { return "" } }, set(k,v){ try { localStorage.setItem(k,v) } catch {} } };
+let key = store.get("hl_key"), pc = null, dc = null, stream = null, sessionId = null, wake = null, live = false;
+let curUser = null, curBot = null;
+const tasks = new Map();
+
+VOICES.forEach(v => { const o = document.createElement("option"); o.value = o.textContent = v; $("voice").appendChild(o) });
+$("voice").value = store.get("hl_voice") || "cove";
+$("voice").onchange = () => store.set("hl_voice", $("voice").value);
+
+function setState(cls, text){ document.body.className = cls || ""; $("stateText").textContent = text }
+function note(t, err){ $("note").textContent = t || ""; $("note").className = err ? "err" : "" }
+function askKey(){ const k = prompt("Access key (from your vault, entry “Hermes Live”)", key); if (k !== null){ key = k.trim(); store.set("hl_key", key) } return key }
+$("keybtn").onclick = askKey;
+
+async function api(path, body, method){
+  const r = await fetch(path, { method: method || "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body || {}) });
+  if (r.status === 401){ throw new Error("Wrong or missing access key") }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok){ const e = new Error(j.error || ("HTTP " + r.status)); e.status = r.status; throw e }
+  return j;
+}
+
+/* ---------- transcript ---------- */
+function scroll(){ const l = $("log"); l.scrollTop = l.scrollHeight }
+function bubble(role){ $("empty") && $("empty").remove(); const d = document.createElement("div"); d.className = "b " + role + " live"; $("log").appendChild(d); scroll(); return d }
+function addText(el, t){ el.textContent += t; scroll() }
+function endBubble(el, full){ if (!el) return; el.classList.remove("live"); if (full) el.textContent = full.trim(); if (!el.textContent.trim()) el.remove() }
+function taskCard(text){ const d = document.createElement("div"); d.className = "task"; d.innerHTML = '<span class="dot"></span><div><b>Hermes is on it</b><small></small></div>'; d.querySelector("small").textContent = text.slice(0, 160); $("log").appendChild(d); scroll(); return d }
+function taskState(card, cls, label, extra){ card.className = "task " + cls; card.querySelector("b").textContent = label; if (extra) card.querySelector("small").textContent = extra }
+
+/* ---------- GPT-Live data channel events ---------- */
+const FILLER = new Set("hello hi hey ok okay yes yeah no nope thanks thank you hmm mm uh um ah right sure well so and the a".split(" "));
+function isFiller(t){ const w = t.toLowerCase().replace(/[^\w\s']/g, " ").split(/\s+/).filter(Boolean); return !w.length || (t.length <= 60 && w.filter(x => FILLER.has(x)).length / w.length >= 0.8) }
+function plain(t){ return String(t || "").replace(/```[\s\S]*?```/g, " (code omitted) ").replace(/`([^`]*)`/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim() }
+function send(o){ if (dc && dc.readyState === "open") dc.send(JSON.stringify(o)) }
+function appendResult(id, text){ send({ type: "delegation.context.append", delegation_item_id: id, content: [{ type: "input_text", text: text.slice(0, 3500) }] }) }
+
+function onEvent(ev){
+  let m; try { m = JSON.parse(ev.data) } catch { return }
+  switch (m.type){
+    case "session.started": live = true; setState("live", "Live: just talk"); note(""); break;
+    case "turn.created": if ((m.turn || {}).role === "user"){ endBubble(curUser); curUser = bubble("you") } else { endBubble(curBot); curBot = bubble("bot") } break;
+    case "input_transcript.added": if (!curUser) curUser = bubble("you"); addText(curUser, (m.item || {}).text || ""); break;
+    case "output_transcript.added": if (!curBot) curBot = bubble("bot"); addText(curBot, (m.item || {}).text || ""); break;
+    case "turn.done": { const t = m.turn || {}; if (t.role === "user"){ endBubble(curUser, t.transcript); curUser = null } else { endBubble(curBot, t.transcript); curBot = null } break }
+    case "delegation.created": delegate(m.item || {}); break;
+    case "error": note("Voice error: " + (((m.error || {}).message) || "unknown"), true); break;
+  }
+}
+
+async function delegate(item){
+  const id = item.id, text = (item.content || []).map(c => c.text || "").join(" ").trim();
+  if (isFiller(text)) return appendResult(id, "The user was just chatting, not asking for work. Reply briefly and naturally. Nothing to run.");
+  const card = taskCard(text); tasks.set(id, card);
+  try {
+    const { job } = await api("/api/delegate", { session: sessionId, text });
+    for (;;){
+      await new Promise(r => setTimeout(r, 1200));
+      if (!live) return;
+      const j = await api("/api/job/" + sessionId + "/" + job, null, "GET");
+      if (j.status === "running"){ taskState(card, "", "Hermes is on it", null); card.querySelector("small").textContent = text.slice(0, 120) + " · " + j.seconds + "s"; continue }
+      if (j.status === "done" && j.answer){
+        taskState(card, "done", "Done", text.slice(0, 160));
+        return appendResult(id, "Task result. Answer the user with this in your own natural spoken words: headline first, then only the details that matter. Result: " + plain(j.answer));
+      }
+      taskState(card, "failed", "Failed", text.slice(0, 160));
+      return appendResult(id, "The task failed. Tell the user once, simply, and offer to retry. Do not claim anything is still running.");
+    }
+  } catch (e){
+    taskState(card, "failed", e.status === 429 ? "Busy" : "Failed", text.slice(0, 160));
+    appendResult(id, e.status === 429 ? "Two tasks are already running. Tell the user you will take this one as soon as one finishes, and ask them to repeat it then." : "The task could not be started. Tell the user briefly.");
+  }
+}
+
+/* ---------- call lifecycle ---------- */
+function iceDone(p, ms){ return new Promise(res => { if (p.iceGatheringState === "complete") return res(); const t = setTimeout(res, ms); p.addEventListener("icegatheringstatechange", () => { if (p.iceGatheringState === "complete"){ clearTimeout(t); res() } }) }) }
+
+async function start(){
+  if (!key && !askKey()) return;
+  setState("connecting", "Connecting…"); note(""); $("call").textContent = "End"; $("call").setAttribute("aria-label", "End call");
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    pc = new RTCPeerConnection();
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    dc = pc.createDataChannel("oai-events"); dc.onmessage = onEvent;
+    pc.ontrack = e => { const a = $("remote"); a.srcObject = e.streams[0]; a.play().catch(() => note("Tap anywhere to enable sound")) };
+    pc.onconnectionstatechange = () => { if (["failed", "disconnected", "closed"].includes(pc.connectionState) && live){ note("Connection lost", true); stop(true) } };
+    await pc.setLocalDescription(await pc.createOffer());
+    await iceDone(pc, 2500);
+    const r = await api("/api/session", { offer: pc.localDescription.sdp, voice: $("voice").value });
+    sessionId = r.session;
+    await pc.setRemoteDescription({ type: "answer", sdp: r.answer });
+    $("mute").disabled = false;
+    try { wake = await navigator.wakeLock.request("screen") } catch {}
+  } catch (e){
+    const msg = e.name === "NotAllowedError" ? "Microphone permission was denied" : e.message;
+    await stop(true); setState("error", "Could not connect"); note(msg, true);
+  }
+}
+
+async function stop(silent){
+  live = false;
+  try { if (sessionId) await api("/api/stop", { session: sessionId }) } catch {}
+  try { dc && dc.close() } catch {}
+  try { pc && pc.close() } catch {}
+  try { stream && stream.getTracks().forEach(t => t.stop()) } catch {}
+  try { wake && wake.release() } catch {}
+  pc = dc = stream = wake = sessionId = null; endBubble(curUser); endBubble(curBot); curUser = curBot = null;
+  $("remote").srcObject = null; $("mute").disabled = true; $("mute").setAttribute("aria-pressed", "false"); $("mute").textContent = "Mute";
+  $("call").textContent = "Call"; $("call").setAttribute("aria-label", "Start call");
+  if (!silent){ setState("", "Ready"); note("") }
+}
+
+$("call").onclick = () => (pc ? stop() : start());
+$("mute").onclick = () => {
+  if (!stream) return;
+  const on = $("mute").getAttribute("aria-pressed") !== "true";
+  stream.getAudioTracks().forEach(t => t.enabled = !on);
+  $("mute").setAttribute("aria-pressed", String(on)); $("mute").textContent = on ? "Muted" : "Mute";
+};
+document.addEventListener("click", () => { const a = $("remote"); if (a.srcObject && a.paused) a.play().catch(() => {}) });
+if (!navigator.mediaDevices || !window.RTCPeerConnection){ note("This browser cannot do voice calls. Use a recent Chrome, Edge or Safari over HTTPS.", true); $("call").disabled = true }
+</script>
+</body>
+</html>

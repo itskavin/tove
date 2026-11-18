@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hermes accent, from hermes-live.html (CSS accent variable). Tints the notification. -->
+    <color name="hermes_accent">#FF6AA8FF</color>
+    <!-- The adaptive launcher icon's layer behind the Tove mark (tool/brand_icons.py). -->
+    <color name="ic_launcher_background">#FF000000</color>
+</resources>
