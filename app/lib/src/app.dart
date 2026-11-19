@@ -34,7 +34,7 @@ import 'brand.dart';
 export 'ui/shell/chat_shell.dart' show LiveLink;
 
 /// The app version sent with push registration (pubspec `version`).
-const kAppVersion = '1.1.1+3';
+const kAppVersion = '1.1.2+4';
 
 /// Long-lived services created in `main` (all optional, so tests and other
 /// platforms run without them).
@@ -134,6 +134,8 @@ class _HermesAppState extends State<HermesApp> {
   StreamSubscription<PairLink>? _pairLinks;
   bool _initialPairAsked = false;
   Timer? _updateTimer;
+  AppLifecycleListener? _lifecycle;
+  bool _updateCheckRunning = false;
 
   @override
   void initState() {
@@ -156,12 +158,28 @@ class _HermesAppState extends State<HermesApp> {
     final updates = widget.services.updates;
     if (updates != null) {
       // A few seconds in, so it never competes with the first chat load.
-      _updateTimer = Timer(const Duration(seconds: 4), () {
-        if (!mounted) return;
-        unawaited(
-          runStartupUpdateCheck(updates, () => _navigator.currentContext),
-        );
-      });
+      _updateTimer = Timer(const Duration(seconds: 4), _autoUpdateCheck);
+      // Android keeps Tove alive in the background for days, so a cold
+      // start alone would rarely check: also check when it comes back.
+      _lifecycle = AppLifecycleListener(
+        onResume: () {
+          _updateTimer?.cancel();
+          _updateTimer = Timer(const Duration(seconds: 2), _autoUpdateCheck);
+        },
+      );
+    }
+  }
+
+  /// The automatic update check (start, resume); one at a time, so a
+  /// resume while the dialog is open never stacks a second one.
+  Future<void> _autoUpdateCheck() async {
+    final updates = widget.services.updates;
+    if (!mounted || updates == null || _updateCheckRunning) return;
+    _updateCheckRunning = true;
+    try {
+      await runStartupUpdateCheck(updates, () => _navigator.currentContext);
+    } finally {
+      _updateCheckRunning = false;
     }
   }
 
@@ -247,6 +265,7 @@ class _HermesAppState extends State<HermesApp> {
     unawaited(_pairLinks?.cancel());
     widget.settings.removeListener(_askInitialPair);
     _updateTimer?.cancel();
+    _lifecycle?.dispose();
     widget.settings.removeListener(_onRefreshSetting);
     if (widget.renderPolicy == null) _policy.dispose();
     super.dispose();

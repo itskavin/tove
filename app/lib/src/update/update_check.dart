@@ -168,9 +168,10 @@ enum UpdateStatus {
 
 /// Checks GitHub Releases for a newer Tove APK.
 ///
-/// - At start, at most once a day ([checkIfDue]), unless turned off in
-///   Settings › About. Failures (offline, rate limit, GitHub down) stay
-///   quiet; the next day's check tries again.
+/// - At start and whenever Tove comes back to the screen, at most every
+///   [interval] ([checkIfDue]), unless turned off in Settings › About.
+///   Failures (offline, rate limit, GitHub down) stay quiet and are
+///   retried at the next start or resume, no sooner than [retryAfter].
 /// - From Settings › About › Check for updates ([checkNow]) any time.
 /// - Nothing is downloaded or installed in the app: "Download" opens the
 ///   APK's URL in the browser.
@@ -193,7 +194,10 @@ class UpdateChecker extends ChangeNotifier {
   static const enabledKey = 'update.check.enabled';
   static const lastCheckKey = 'update.check.last';
   static const dismissedKey = 'update.check.dismissed';
-  static const interval = Duration(days: 1);
+  static const interval = Duration(hours: 6);
+
+  /// The least time between automatic attempts after one that failed.
+  static const retryAfter = Duration(minutes: 15);
   static const timeout = Duration(seconds: 12);
 
   /// Releases carry an APK, so only Android checks.
@@ -209,6 +213,7 @@ class UpdateChecker extends ChangeNotifier {
   bool _enabled = true;
   bool _loaded = false;
   DateTime? _lastCheck;
+  DateTime? _lastAttempt;
   String? _dismissed;
   UpdateStatus _status = UpdateStatus.unknown;
   ReleaseInfo? _available;
@@ -245,7 +250,8 @@ class UpdateChecker extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// The start-up check: only when on, supported and a day has passed.
+  /// The automatic check (start, resume): only when on, supported and
+  /// [interval] has passed since the last answer from GitHub.
   /// Returns a release worth announcing (newer, and not dismissed with
   /// "Later"), else null.
   Future<ReleaseInfo?> checkIfDue() async {
@@ -257,6 +263,13 @@ class UpdateChecker extends ChangeNotifier {
     if (last != null && now.difference(last) < interval && now.isAfter(last)) {
       return null;
     }
+    final tried = _lastAttempt;
+    if (tried != null &&
+        now.difference(tried) < retryAfter &&
+        !now.isBefore(tried)) {
+      return null;
+    }
+    _lastAttempt = now;
     await checkNow();
     final r = _available;
     return r != null && r.tag != _dismissed ? r : null;
@@ -285,12 +298,14 @@ class UpdateChecker extends ChangeNotifier {
           )
           .timeout(timeout);
       result = _read(res);
-      // Any answer from GitHub counts as today's check; an offline phone
-      // tries again at the next start.
-      _lastCheck = _now();
-      try {
-        await _prefs.setInt(lastCheckKey, _lastCheck!.millisecondsSinceEpoch);
-      } catch (_) {}
+      // Only a real answer counts as a check; a rate limit, a GitHub error
+      // or an offline phone is retried at the next start or resume.
+      if (result == UpdateStatus.upToDate || result == UpdateStatus.available) {
+        _lastCheck = _now();
+        try {
+          await _prefs.setInt(lastCheckKey, _lastCheck!.millisecondsSinceEpoch);
+        } catch (_) {}
+      }
     } on TimeoutException {
       result = UpdateStatus.offline;
     } catch (e) {

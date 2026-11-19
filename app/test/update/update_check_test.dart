@@ -154,16 +154,16 @@ void main() {
       requests = 0;
     });
 
-    test('finds a newer release, at most once a day', () async {
+    test('finds a newer release, at most every 6 hours', () async {
       final c = checker((_) => json(release()));
       final r = await c.checkIfDue();
       expect(r?.version.name, '1.2.0');
       expect(c.status, UpdateStatus.available);
       expect(requests, 1);
 
-      now = now.add(const Duration(hours: 23));
+      now = now.add(const Duration(hours: 5));
       final again = checker((_) => json(release()));
-      expect(await again.checkIfDue(), isNull, reason: 'checked today');
+      expect(await again.checkIfDue(), isNull, reason: 'checked recently');
       expect(requests, 1);
 
       now = now.add(const Duration(hours: 2));
@@ -212,6 +212,29 @@ void main() {
       expect(await offline.checkIfDue(), isNull);
       expect(offline.status, UpdateStatus.offline);
       expect(offline.lastCheck, isNull, reason: 'retried at the next start');
+      expect(await offline.checkIfDue(), isNull);
+      expect(requests, 5, reason: 'no retry within 15 minutes');
+      now = now.add(const Duration(minutes: 16));
+      await offline.checkIfDue();
+      expect(requests, 6, reason: 'retried on the next resume');
+    });
+
+    test('a rate limit is not counted as a check', () async {
+      var limited = true;
+      final c = checker(
+        (_) => limited
+            ? json(
+                {'message': 'x'},
+                status: 403,
+                h: {'x-ratelimit-remaining': '0'},
+              )
+            : json(release()),
+      );
+      expect(await c.checkIfDue(), isNull);
+      expect(c.lastCheck, isNull);
+      limited = false;
+      now = now.add(const Duration(minutes: 20));
+      expect((await c.checkIfDue())?.tag, 'v1.2.0+5');
     });
 
     test('off: no request at start; Check for updates still works', () async {
