@@ -29,6 +29,9 @@ const int kMinKeyLength = 20;
 /// The bridge rejects longer tasks with 400 (`api_delegate`).
 const int kMaxTaskChars = 8000;
 
+/// The call's newest spoken turns sent with each delegated task.
+const int kCallContextTurns = 10;
+
 /// `delegation.context.append` payloads are clipped to this, like the web page.
 const int kMaxResultChars = 3500;
 

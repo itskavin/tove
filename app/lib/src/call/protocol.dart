@@ -67,9 +67,10 @@ abstract final class VoiceNotes {
       'The user was just chatting, not asking for work. Reply briefly and '
       'naturally. Nothing to run.';
   static String result(String answer) =>
-      'Task result. Answer the user with this in your own natural spoken '
-      'words: headline first, then only the details that matter. Result: '
-      '${plainForVoice(answer)}';
+      'Task result. Say it once, in your own natural spoken words: headline '
+      'first, then only the details that matter. The full answer is already '
+      'in the chat, so do not read it all or repeat it. No greeting: the call '
+      'is already under way. Result: ${plainForVoice(answer)}';
   static const emptyResult =
       'The task finished but Hermes returned no answer. Tell the user briefly '
       'and offer to retry. Do not invent a result.';

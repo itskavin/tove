@@ -386,6 +386,7 @@ class _ChatHomeState extends State<_ChatHome> {
   void initState() {
     super.initState();
     _api.location = _location.wire;
+    widget.call.location = _location.wire;
     if (_location.available) widget.settings.enableLocation = _location.enable;
     final s = widget.services;
     if (s.notifications) {
@@ -543,6 +544,7 @@ class _ChatHomeState extends State<_ChatHome> {
     if (widget.settings.enableLocation == _location.enable) {
       widget.settings.enableLocation = null;
     }
+    if (widget.call.location == _location.wire) widget.call.location = null;
     _location.dispose();
     _lifecycle.dispose();
     _chat.removeListener(_syncRecentChat);

@@ -110,6 +110,10 @@ class CallController extends ChangeNotifier {
 
   /// The chat to link the call to (API v2 `conversation_id`), or null.
   final String? Function()? conversationId;
+
+  /// The user's approximate location for tasks, when they share it (set by
+  /// the app with the chat's location source).
+  Map<String, Object?>? Function()? location;
   final CallTimings timings;
   final bool _desktop;
 
@@ -329,6 +333,8 @@ class CallController extends ChangeNotifier {
         tasks: tasks,
         onChanged: _notify,
         conversationId: c.conversationId,
+        context: () => transcript,
+        location: () => location?.call(),
         timings: timings,
       );
 

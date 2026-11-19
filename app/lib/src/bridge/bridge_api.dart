@@ -232,14 +232,25 @@ class BridgeApi {
     );
   }
 
+  /// Starts a Hermes task for the call [session]. [context] is the call's
+  /// newest transcript turns (`{role: user|assistant, text}`, oldest first):
+  /// the voice model hands over only its task text, so Hermes would not
+  /// know what the call was about. [location] as on `/api/chat`.
   Future<String> delegate({
     required String session,
     required String text,
+    List<Map<String, String>> context = const [],
+    Map<String, Object?>? location,
   }) async {
     final j = await _send(
       'POST',
       '/api/delegate',
-      body: {'session': session, 'text': text},
+      body: {
+        'session': session,
+        'text': text,
+        if (context.isNotEmpty) 'context': context,
+        'location': ?location,
+      },
     );
     final job = j['job'];
     if (job is! String || job.isEmpty) {

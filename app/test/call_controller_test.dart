@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tove_chat/src/call/call_controller.dart';
+import 'package:tove_chat/src/call/delegations.dart' show callContext;
 import 'package:tove_chat/src/call/models.dart';
 import 'package:tove_chat/src/platform/call_platform.dart';
 import 'package:tove_chat/src/rtc/voice_transport.dart';
@@ -620,6 +621,65 @@ void main() {
       (append['content'] as List).single['text'],
       contains('The disk is 40% full.'),
     );
+  });
+
+  test('a task carries the call so far and the shared location', () async {
+    // The call that lost its context: the voice model handed over only the
+    // last sentence, so Hermes never saw the trip.
+    call.location = () => {'lat': 18.52, 'lng': 73.86, 'label': 'Pune, IN'};
+    await goLive();
+    const turns = [
+      ('user', 'We are planning to go at a weekend trip, so give us a plan'),
+      ('assistant', 'Fun. What kind of trip? Mountains, beach, city?'),
+      ('user', 'Oh it\'s more of a city, I think'),
+      ('assistant', 'And when are you leaving?'),
+      ('user', 'A weekend'),
+      ('assistant', 'And where are you starting from?'),
+      ('user', 'No idea. I\'m here. I\'m with my home'),
+    ];
+    var n = 0;
+    for (final (role, text) in turns) {
+      transport.emit({
+        'type': 'turn.done',
+        'turn': {'id': 't${n++}', 'role': role, 'transcript': text},
+      });
+    }
+    transport.emit({
+      'type': 'delegation.created',
+      'item': {
+        'id': 'trip',
+        'content': [
+          {
+            'type': 'input_text',
+            'text': 'No idea. I\'m here. I\'m with my home',
+          },
+        ],
+      },
+    });
+    await settle(60);
+    final body = bridge.to('/api/delegate').single.body as Map;
+    expect(body['text'], 'No idea. I\'m here. I\'m with my home');
+    final context = (body['context'] as List).cast<Map>();
+    expect(context, hasLength(turns.length));
+    expect(context.first, {
+      'role': 'user',
+      'text': 'We are planning to go at a weekend trip, so give us a plan',
+    });
+    expect(context[4], {'role': 'user', 'text': 'A weekend'});
+    expect(body['location'], containsPair('label', 'Pune, IN'));
+  });
+
+  test('callContext keeps the newest turns, oldest first', () {
+    final entries = [
+      for (var i = 0; i < 14; i++)
+        TranscriptEntry(i, i.isEven ? Speaker.user : Speaker.hermes)
+          ..text = i == 5 ? '   ' : 'turn $i',
+    ];
+    final ctx = callContext(entries);
+    expect(ctx, hasLength(10));
+    expect(ctx.first['text'], 'turn 3');
+    expect(ctx.last, {'role': 'assistant', 'text': 'turn 13'});
+    expect(ctx.map((t) => t['text']), isNot(contains('   ')));
   });
 
   test('ending the call stops running tasks honestly', () async {

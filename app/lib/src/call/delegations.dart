@@ -8,6 +8,26 @@ import 'models.dart';
 import 'protocol.dart';
 import '../brand.dart';
 
+/// The newest [max] spoken turns of a call, oldest first, as `/api/delegate`
+/// `context`: the task's own goal and details were usually said several
+/// turns before the voice model handed it over.
+List<Map<String, String>> callContext(
+  List<TranscriptEntry> transcript, {
+  int max = kCallContextTurns,
+}) {
+  final turns = [
+    for (final e in transcript)
+      if (e.text.trim().isNotEmpty)
+        {
+          'role': e.speaker == Speaker.user ? 'user' : 'assistant',
+          'text': e.text.trim().length > 2000
+              ? e.text.trim().substring(0, 2000)
+              : e.text.trim(),
+        },
+  ];
+  return turns.length > max ? turns.sublist(turns.length - max) : turns;
+}
+
 /// Runs GPT-Live delegations as Hermes jobs for one call:
 /// `delegation.created` -> `POST /api/delegate` -> poll `GET /api/job` ->
 /// `delegation.context.append`. Each item id is handled once.
@@ -19,6 +39,8 @@ class DelegationRunner {
     required this.tasks,
     required this.onChanged,
     this.conversationId,
+    this.context,
+    this.location,
     this.timings = const CallTimings(),
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
@@ -35,6 +57,13 @@ class DelegationRunner {
 
   /// The chat the call is linked to; stamped on every task.
   final String? conversationId;
+
+  /// The call's transcript so far, sent with each task (see
+  /// [callContext]).
+  final List<TranscriptEntry> Function()? context;
+
+  /// The user's approximate location when they share it (Settings), or null.
+  final Map<String, Object?>? Function()? location;
   final CallTimings timings;
   final DateTime Function() _now;
 
@@ -71,6 +100,8 @@ class DelegationRunner {
         text: task.text.length > kMaxTaskChars
             ? task.text.substring(0, kMaxTaskChars)
             : task.text,
+        context: callContext(context?.call() ?? const []),
+        location: location?.call(),
       );
     } on BridgeException catch (e) {
       if (_stopped) return;
