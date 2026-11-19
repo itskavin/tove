@@ -152,11 +152,14 @@ class FakeBridge {
           _msg(id, t['role'] as String, t['text'] as String, source: 'voice'),
         );
       }
-      return json({
-        'added': turns.length,
-        'skipped': 0,
-        'conversation': conversations.firstWhere((c) => c['id'] == id),
-      });
+      final conv = conversations.firstWhere((c) => c['id'] == id)
+        ..['message_count'] = stored[id]!.length;
+      return json({'added': turns.length, 'skipped': 0, 'conversation': conv});
+    }
+    if (m != null && m[2] == null && r.method == 'DELETE') {
+      conversations.removeWhere((c) => c['id'] == m[1]);
+      stored.remove(m[1]);
+      return json({'ok': true});
     }
     if (m != null && m[2] == null && r.method == 'PATCH') {
       final c = conversations.firstWhere((c) => c['id'] == m[1]);
@@ -187,6 +190,9 @@ class FakeBridge {
       stored[id]!
         ..add(user)
         ..add(answer);
+      // The count follows, as on the bridge (an empty chat is hidden).
+      conversations.firstWhere((c) => c['id'] == id)['message_count'] =
+          stored[id]!.length;
       String ev(String name, Object data) =>
           'event: $name\ndata: ${jsonEncode(data)}\n\n';
       final half = reply.length ~/ 2;

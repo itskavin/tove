@@ -30,7 +30,7 @@ Map<String, dynamic> _conv(String id, String title) => {
   'created': 1794691021626,
   'updated': 1794691021626,
   'preview': '',
-  'message_count': 0,
+  'message_count': 2,
 };
 
 /// The shell after this round: the Tasks panel from the right, the folding

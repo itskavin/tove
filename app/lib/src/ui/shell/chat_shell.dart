@@ -779,7 +779,13 @@ class ChatShellState extends State<ChatShell>
         ? const <LiveTask>[]
         : liveTasksFromEntries(s.tasks, key: key);
     _watchUnfinishedTasks(s);
-    if (turns.isEmpty && tasks.isEmpty) return;
+    if (turns.isEmpty && tasks.isEmpty) {
+      // Nothing was said: the chat made for the call goes again, and an
+      // existing chat is left exactly as it was (no icon change, no reorder).
+      final id = s.conversationId;
+      if (id != null && s.tasks.isEmpty) unawaited(chat.discardEmptyChat(id));
+      return;
+    }
     _threadKey.currentState?.staggerNext(turns.length + tasks.length);
     await chat.importLiveTranscript(
       turns,

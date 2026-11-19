@@ -244,6 +244,7 @@ class Conversation {
     required this.updated,
     this.preview = '',
     this.messageCount = 0,
+    this.empty = false,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> j) => Conversation(
@@ -260,6 +261,11 @@ class Conversation {
     updated: _time(j['updated']),
     preview: _s(j['preview']),
     messageCount: _i(j['message_count']),
+    // The server says it holds no messages: a live call's placeholder. A
+    // cached copy (toJson) keeps its own flag.
+    empty: j.containsKey('empty')
+        ? j['empty'] == true
+        : j['message_count'] is num && j['message_count'] == 0,
   );
 
   final String id;
@@ -274,6 +280,11 @@ class Conversation {
   final String preview;
   final int messageCount;
 
+  /// A chat with no messages yet: the one a live call is linked to before
+  /// anything is said. The chat list hides it, so a call that ends without
+  /// a word leaves no chat behind; it shows up with its first message.
+  final bool empty;
+
   bool get isLive => kind == ConversationKind.live;
 
   Map<String, dynamic> toJson() => {
@@ -286,6 +297,7 @@ class Conversation {
     'updated': updated.millisecondsSinceEpoch,
     'preview': preview,
     'message_count': messageCount,
+    'empty': empty,
   };
 
   Conversation copyWith({
@@ -306,6 +318,7 @@ class Conversation {
     updated: updated ?? this.updated,
     preview: preview ?? this.preview,
     messageCount: messageCount ?? this.messageCount,
+    empty: empty && (messageCount ?? 0) == 0,
   );
 }
 

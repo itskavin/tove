@@ -71,7 +71,7 @@ Map<String, dynamic> _conv(String id, String title) => {
   'created': 1794691021626,
   'updated': 1794691021626,
   'preview': '',
-  'message_count': 0,
+  'message_count': 2,
 };
 
 Map<String, dynamic> _stored(String id, String role, String text) => {

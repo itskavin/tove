@@ -393,6 +393,32 @@ void main() {
     expect(find.textContaining('Is NAS-01 healthy?'), findsOneWidget);
   });
 
+  testWidgets('a call that ends without a word leaves no chat behind', (
+    tester,
+  ) async {
+    await boot(tester, key: testKey, chat: true);
+    await goLive(tester);
+    final id = bridge.to('/api/session').single.body['conversation_id'];
+    expect(id, isNotNull);
+    await tester.tap(find.bySemanticsLabel('End live voice'));
+    await tester.pump();
+    await tester.runAsync(() => settle(60));
+    await advance(tester);
+    expect(
+      bridge
+          .to('/api/conversations/')
+          .where((r) => r.path.endsWith('/live-transcript')),
+      isEmpty,
+    );
+    expect(
+      bridge.requests.where(
+        (r) => r.method == 'DELETE' && r.path == '/api/conversations/$id',
+      ),
+      hasLength(1),
+    );
+    expect(bridge.conversations, isEmpty);
+  });
+
   testWidgets('switching chats while live asks first', (tester) async {
     tester.view.physicalSize = const Size(400, 860);
     tester.view.devicePixelRatio = 1;
@@ -410,10 +436,22 @@ void main() {
           'kind': 'text',
           'created': 1794691021626,
           'updated': 1794691021626,
-          'preview': '',
-          'message_count': 0,
+          'preview': 'Backups ran at 2.',
+          'message_count': 1,
         });
-        b.stored['old1'] = [];
+        b.stored['old1'] = [
+          {
+            'id': 'om1',
+            'conversation_id': 'old1',
+            'role': 'assistant',
+            'text': 'Backups ran at 2.',
+            'source': 'text',
+            'status': 'complete',
+            'created': 1794691021626,
+            'client_id': null,
+            'meta': <String, dynamic>{},
+          },
+        ];
       },
     );
     await goLive(tester);

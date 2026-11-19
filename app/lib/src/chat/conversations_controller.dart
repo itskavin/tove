@@ -31,13 +31,16 @@ class ConversationsController extends ChangeNotifier {
 
   /// All loaded chats in server order (newest `updated` first).
   List<Conversation> get conversations => List.unmodifiable(_items);
+
+  /// The rows to show. Empty chats (a live call's placeholder before any
+  /// word was said, [Conversation.empty]) are left out, unless pinned.
   List<Conversation> get pinned => [
     for (final c in _items)
       if (c.pinned) c,
   ];
   List<Conversation> get recent => [
     for (final c in _items)
-      if (!c.pinned) c,
+      if (!c.pinned && !c.empty) c,
   ];
 
   bool get loading => _loading;

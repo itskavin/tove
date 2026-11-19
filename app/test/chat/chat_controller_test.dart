@@ -511,6 +511,82 @@ void main() {
     expect(convs.byId('live1')!.title, 'What time');
   });
 
+  test('live: an empty call leaves no chat in the list', () async {
+    await setUpChat();
+    final before = [for (final c in convs.recent) c.id];
+    final blank = {
+      ...conversationJson('live1', title: 'New chat'),
+      'preview': '',
+      'message_count': 0,
+    };
+    http.on(
+      'POST /api/conversations',
+      (_) => jsonResponse({'conversation': blank}, status: 201),
+    );
+    http.on(
+      'GET /api/conversations/live1',
+      (_) => jsonResponse({
+        'conversation': blank,
+        'messages': [],
+        'has_more': false,
+      }),
+    );
+    http.on('DELETE /api/conversations/live1', (_) => jsonResponse({}));
+    expect(await chat.conversationIdForLive(), 'live1');
+    // The placeholder is never shown, even while the call runs.
+    expect([for (final c in convs.recent) c.id], before);
+    expect(convs.byId('live1')!.empty, isTrue);
+    // Nothing was said: the import posts nothing and the chat goes again.
+    expect(await chat.importLiveTranscript(const []), isNull);
+    expect(http.count('POST /api/conversations/live1/live-transcript'), 0);
+    await chat.discardEmptyChat('live1');
+    expect(http.count('DELETE /api/conversations/live1'), 1);
+    expect(convs.byId('live1'), isNull);
+    expect(chat.currentConversationId, isNull);
+    expect([for (final c in convs.recent) c.id], before);
+  });
+
+  test('live: a chat shows once the call puts something in it', () async {
+    await setUpChat();
+    convs.upsert(
+      Conversation.fromJson({
+        ...conversationJson('live1'),
+        'preview': '',
+        'message_count': 0,
+      }),
+    );
+    expect(convs.recent.map((c) => c.id), isNot(contains('live1')));
+    convs.upsert(
+      Conversation.fromJson({...conversationJson('live1'), 'kind': 'live'}),
+    );
+    expect(convs.recent.map((c) => c.id), contains('live1'));
+    // A cached copy keeps the flag it had, not the count's default.
+    final cached = Conversation.fromJson(
+      Conversation(
+        id: 'x',
+        title: 'Cached',
+        created: _epoch,
+        updated: _epoch,
+      ).toJson(),
+    );
+    expect(cached.empty, isFalse);
+  });
+
+  test('live: an existing chat is never discarded', () async {
+    await setUpChat();
+    http.on(
+      'GET /api/conversations/old',
+      (_) => jsonResponse({
+        'conversation': conversationJson('old'),
+        'messages': [messageJson('m1', conv: 'old')],
+        'has_more': false,
+      }),
+    );
+    await chat.discardEmptyChat('old');
+    expect(http.count('DELETE /api/conversations/old'), 0);
+    expect(convs.byId('old'), isNotNull);
+  });
+
   test('live: a failed transcript post still shows the turns', () async {
     await setUpChat();
     http.on(
@@ -592,3 +668,5 @@ void main() {
     chat.dispose();
   });
 }
+
+final _epoch = DateTime.utc(2026, 11, 19);

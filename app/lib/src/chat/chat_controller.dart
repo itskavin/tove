@@ -896,6 +896,31 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  /// After a live call that left nothing in the chat (no word, no task):
+  /// deletes the chat made for it, so an empty call leaves no row in the
+  /// chat list. Only a chat the server reports as empty, and only while this
+  /// device has no messages in it, is removed; a chat with anything in it is
+  /// never touched.
+  Future<void> discardEmptyChat(String id) async {
+    bool stillEmpty() =>
+        _conversation?.id != id || (_messages.isEmpty && !streaming);
+    if (!stillEmpty()) return;
+    try {
+      final d = await api.getConversation(id, limit: 1);
+      if (d.messages.isNotEmpty || d.conversation.messageCount > 0) return;
+      if (!stillEmpty()) return;
+      await api.deleteConversation(id);
+    } on ChatException {
+      return;
+    }
+    final wasCurrent = _conversation?.id == id;
+    conversations?.remove(id);
+    if (wasCurrent) {
+      _conversation = null;
+      _notifyNow();
+    }
+  }
+
   /// Saves a finished call's turns into the chat. With history support it
   /// posts them to the server (creating the chat if needed) and reloads the
   /// thread, which also brings in task results the bridge saved for a linked
