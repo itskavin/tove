@@ -34,7 +34,7 @@ import 'brand.dart';
 export 'ui/shell/chat_shell.dart' show LiveLink;
 
 /// The app version sent with push registration (pubspec `version`).
-const kAppVersion = '1.0.0+1';
+const kAppVersion = '1.1.0+2';
 
 /// Long-lived services created in `main` (all optional, so tests and other
 /// platforms run without them).
