@@ -18,6 +18,7 @@ import '../theme/tokens.dart';
 import 'code_block.dart';
 import 'md_blocks.dart' show normalizeBulletGlyphs;
 import 'footnotes.dart';
+import 'plain_math.dart';
 import 'links.dart';
 import 'markdown_style.dart';
 import 'md_images.dart';
@@ -79,7 +80,7 @@ List<md.Node> parseMarkdownBlock(String source) {
 List<md.Node> _parse(String src) {
   final doc = md.Document(extensionSet: _extensions, encodeHtml: false);
   return applyInlineHtml(
-    doc.parseLines(normalizeBulletGlyphs(src).split('\n')),
+    doc.parseLines(plainMath(normalizeBulletGlyphs(src)).split('\n')),
   );
 }
 

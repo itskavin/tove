@@ -137,7 +137,7 @@ void main() {
         testWidgets('render $name', (tester) async {
           final places = <String, PlaceInfo>{
             for (final e in ((t['places'] as Map?) ?? const {}).entries)
-              if (PlaceInfo.fromJson(e.value) case final p?) '${e.key}': p,
+              '${e.key}': ?PlaceInfo.fromJson(e.value),
           };
           final images = NetImages(places);
           final text = (t['text'] as String?)?.trim().isNotEmpty == true
