@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CRITERIA = ("usefulness", "accuracy", "structure", "actionability", "speed")
+CRITERIA = ("usefulness", "accuracy", "structure", "presentation", "actionability", "speed")
 
 SYSTEM = """You grade answers from a chat assistant called Tove, comparing them with what the best ChatGPT answer would contain.
 The app renders Markdown and ```openui fences natively: an openui fence becomes real interactive UI (cards with photos, maps
@@ -34,12 +34,14 @@ Score each criterion from 1 (bad) to 10 (better than the reference):
 - accuracy: are facts, numbers, names, places and sources plausible and verifiable? Penalise invented details, missing
   citations where facts need them, and stale information. Do not reward confident unsourced specifics.
 - structure: is the shape right for the intent (cards, maps, tables, quizzes, pictures where they help; plain text for a
-  quick fact); easy to scan; no padding.
+  quick fact); no padding.
+- presentation: how it would look on a phone: layout, visual hierarchy (lead, headings, bold key facts), visuals,
+  scannability; no walls of text, cramped lists or repeated disclaimers.
 - actionability: concrete next steps the user can tap or do (call, directions, book, start a test, buttons), rather than
   ending with a bare question that could have been avoided.
 - speed: given the time taken and the depth required (quick facts should be under ~5 s; deep research under ~60 s is good).
 
-Answer with JSON only: {"usefulness": n, "accuracy": n, "structure": n, "actionability": n, "speed": n,
+Answer with JSON only: {"usefulness": n, "accuracy": n, "structure": n, "presentation": n, "actionability": n, "speed": n,
 "overall": n, "rationale": "two or three short sentences"}. overall is your holistic score, not necessarily the mean."""
 
 

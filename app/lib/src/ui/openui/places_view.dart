@@ -11,6 +11,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../platform/coarse_location.dart';
 import '../interactive/scope.dart';
 import '../interactive/ui_entities.dart' show UiRemoteImage;
 import '../markdown/markdown_style.dart';
@@ -745,4 +746,71 @@ class _GridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GridPainter old) => old.color != color;
+}
+
+/// The message sent after the user shares their location from a reply.
+const locationSharedMessage =
+    "I've turned on my approximate location. Please answer again for near me.";
+
+/// `LocationButton`: turns on "Use my approximate location" (permission
+/// prompt first) and asks the question again. Hidden where the device can't
+/// share a location or it is already on.
+class OuiLocationButton extends StatefulWidget {
+  const OuiLocationButton({
+    super.key,
+    required this.label,
+    required this.style,
+  });
+  final String label;
+  final MarkdownStyle style;
+
+  @override
+  State<OuiLocationButton> createState() => _OuiLocationButtonState();
+}
+
+class _OuiLocationButtonState extends State<OuiLocationButton> {
+  bool _busy = false;
+  bool _failed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = LocationScope.maybeOf(context);
+    final h = UiActionHandler.of(context);
+    if (service == null || !service.available || service.enabled) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _busy || !h.canSend || h.nextUserMessage != null
+              ? null
+              : () async {
+                  setState(() => _busy = true);
+                  final ok = await service.enable();
+                  if (!mounted) return;
+                  setState(() {
+                    _busy = false;
+                    _failed = !ok;
+                  });
+                  if (ok) h.send(locationSharedMessage);
+                },
+          icon: const Icon(Icons.near_me_outlined, size: 18),
+          label: Text(widget.label),
+          style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+        ),
+        if (_failed)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Location is off or not allowed for Tove.',
+              style: widget.style.caption.copyWith(
+                color: widget.style.textMuted,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }

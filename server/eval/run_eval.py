@@ -3,9 +3,10 @@
 the replies.
 
 The scratch bridge is started here, from the bridge script you name, on its own port and in its own temporary data
-directory, so a production bridge (its chats, prompts, caches) is never touched. Hermes' address and key (and, when
-present, GOOGLE_PLACES_API_KEY and the title/judge proxy settings) are read from an env file you name; nothing else
-is copied from it.
+directory, so a production bridge (its chats, prompts, caches) is never touched. Hermes' address and key (and the
+title/judge proxy settings) are read from an env file you name; nothing else
+is copied from it. Places come from a places_fetch.py extract (--places-db); the places_search tool itself is a
+Hermes plugin, so Hermes only uses it when hermes-places is installed there.
 
     python3 run_eval.py --bridge ../gpt-live-bridge.py --env /path/to/bridge.env --out runs/after
     python3 run_eval.py ... --only adhd,dentist --location "Mylapore, Chennai, IN@13.03,80.27"
@@ -32,8 +33,8 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Only these are taken from the env file: Hermes, the places key and the model proxy (titles and the judge).
-PASS_KEYS = ("HERMES_API_URL", "HERMES_API_KEY", "HERMES_MODEL", "HERMES_STANDARD_PROVIDER", "GOOGLE_PLACES_API_KEY",
+# Only these are taken from the env file: Hermes and the model proxy (titles and the judge).
+PASS_KEYS = ("HERMES_API_URL", "HERMES_API_KEY", "HERMES_MODEL", "HERMES_STANDARD_PROVIDER",
              "TITLE_API_URL", "TITLE_API_KEY", "TITLE_MODEL", "ASSISTANT_NAME")
 
 
@@ -54,18 +55,19 @@ def free_port():
         return s.getsockname()[1]
 
 
-def start_bridge(script, env_file, port, data_dir, places):
+def start_bridge(script, env_file, port, data_dir, places, places_db=""):
     src = read_env(env_file)
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("BRIDGE_", "LIVE_", "HERMES_", "GOOGLE_", "TOVE_"))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("BRIDGE_", "LIVE_", "HERMES_", "PLACES_", "TOVE_"))}
     env.update({k: src[k] for k in PASS_KEYS if src.get(k)})
-    if not places:
-        env.pop("GOOGLE_PLACES_API_KEY", None)
+    if places and places_db:
+        env["PLACES_DB"] = places_db
     key = secrets.token_urlsafe(32)
     env.update({"BRIDGE_HOST": "127.0.0.1", "BRIDGE_PORT": str(port), "BRIDGE_DATA_DIR": data_dir, "LIVE_PAGE_KEY": key,
                 "LIVE_TITLES": "simple", "PUSH_ENABLED": "false", "LIVE_UPLOADS": "false", "LIVE_MAX_CHATS": "2",
                 "LIVE_BACKEND": "openai", "CODEX_HOME": os.path.join(data_dir, "codex-home")})
     log = open(os.path.join(data_dir, "bridge.log"), "w")
-    proc = subprocess.Popen([sys.executable, str(script)], env=env, stdout=log, stderr=subprocess.STDOUT,
+    script = os.path.abspath(script)
+    proc = subprocess.Popen([sys.executable, script], env=env, stdout=log, stderr=subprocess.STDOUT,
                             cwd=os.path.dirname(os.path.abspath(script)))
     base = "http://127.0.0.1:%d" % port
     for _ in range(100):
@@ -136,7 +138,8 @@ def main():
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--location", default="", help='"Label@lat,lng"; default: the questions file\'s sample location')
     ap.add_argument("--no-location", action="store_true", help="send no location (as a bridge without it)")
-    ap.add_argument("--no-places", action="store_true", help="do not pass GOOGLE_PLACES_API_KEY to the scratch bridge")
+    ap.add_argument("--no-places", action="store_true", help="no places database for the scratch bridge")
+    ap.add_argument("--places-db", default="", help="a places_fetch.py extract for the scratch bridge (PLACES_DB)")
     ap.add_argument("--keep-data", action="store_true")
     args = ap.parse_args()
 
@@ -151,7 +154,7 @@ def main():
     data_dir = tempfile.mkdtemp(prefix="tove-eval-bridge-")
     os.chmod(data_dir, 0o700)
     port = free_port()
-    proc, base, key, caps = start_bridge(args.bridge, args.env, port, data_dir, not args.no_places)
+    proc, base, key, caps = start_bridge(args.bridge, args.env, port, data_dir, not args.no_places, args.places_db)
     print("scratch bridge on %s (data %s); places: %s" % (base, data_dir, caps.get("places")), flush=True)
     results = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "bridge": str(args.bridge), "ui": args.ui,
                "effort": args.effort, "location": location, "places": caps.get("places"),

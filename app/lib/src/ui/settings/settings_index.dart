@@ -83,6 +83,12 @@ List<SettingsEntry> settingsIndex({
   const SettingsEntry('sounds', 'Sounds', SettingsSection.general, [
     'tones', 'audio', 'beep', //
   ]),
+  const SettingsEntry(
+    'location',
+    'Use my approximate location',
+    SettingsSection.general,
+    ['location', 'near me', 'local', 'gps', 'privacy'],
+  ),
   const SettingsEntry('haptics', 'Haptics', SettingsSection.general, [
     'vibration', 'vibrate', 'feedback', //
   ]),

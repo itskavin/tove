@@ -148,6 +148,7 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
   bool _reduceMotion = false;
   bool _sounds = true;
   bool _haptics = true;
+  bool _locationAnswers = false;
   bool _sidebarCollapsed = false;
   TextSize _textSize = TextSize.standard;
   bool _highContrast = false;
@@ -213,6 +214,10 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
   bool get sounds => _sounds;
   bool get haptics => _haptics;
 
+  /// "Use my approximate location for local answers" (off by default): the
+  /// app sends a coarse position (about 1 km) with each chat message.
+  bool get locationAnswers => _locationAnswers;
+
   /// Text size on this device.
   TextSize get textSize => _textSize;
 
@@ -239,6 +244,7 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
       _effort = _pick(ReplyEffort.values, await prefs.get('effort'), _effort);
       _sounds = await prefs.get('sounds') != 'false';
       _haptics = await prefs.get('haptics') != 'false';
+      _locationAnswers = await prefs.get('location_answers') == 'true';
       _sidebarCollapsed = await prefs.get('sidebarCollapsed') == 'true';
       _accent = _pick(AccentColour.values, await prefs.get('accent'), _accent);
       _textSize = _pick(
@@ -446,6 +452,31 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
     _sounds = on;
     notifyListeners();
     await _setPref('sounds', '$on');
+  }
+
+  /// Set by the chat home on devices that can share a location: asks for
+  /// the permission and a first position, then turns the setting on.
+  Future<bool> Function()? enableLocation;
+
+  /// Whether the location setting can be offered (Android with the chat
+  /// home running).
+  bool get locationSupported => enableLocation != null;
+
+  /// The settings switch: on asks first (false when declined).
+  Future<bool> requestLocationAnswers(bool on) async {
+    if (!on) {
+      await setLocationAnswers(false);
+      return true;
+    }
+    final ask = enableLocation;
+    return ask != null && await ask();
+  }
+
+  Future<void> setLocationAnswers(bool on) async {
+    if (on == _locationAnswers) return;
+    _locationAnswers = on;
+    notifyListeners();
+    await _setPref('location_answers', '$on');
   }
 
   Future<void> setHaptics(bool on) async {

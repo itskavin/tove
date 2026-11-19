@@ -70,5 +70,6 @@ class MainActivity : FlutterActivity() {
         // Always forward too, so plugins that use the activity callback still work.
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         CallBridge.onRequestPermissionsResult(requestCode)
+        device?.onPermissionResult(requestCode)
     }
 }

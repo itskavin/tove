@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Haptics through the vibrator (DeviceChannel.haptic); a normal permission. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- "Use my approximate location for local answers" (off by default): coarse only,
+         asked for when the user turns it on (DeviceChannel.coarseLocation). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Network callbacks (EventsService waits for a validated network). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 

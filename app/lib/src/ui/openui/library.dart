@@ -821,6 +821,13 @@ const List<OuiComponent> toveComponents = [
     OuiProp('lng', 'number', required: true),
   ]),
   OuiComponent(
+    'LocationButton',
+    'Tove',
+    'One tap shares the user\'s approximate location, then asks again. '
+        'For a local question without a location line.',
+    [OuiProp('label', 'text')],
+  ),
+  OuiComponent(
     'Quiz',
     'Tove',
     'One question at a time with big answer buttons, progress and Back; '

@@ -1,3 +1,5 @@
+import 'platform/coarse_location.dart';
+
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
@@ -375,9 +377,16 @@ class _ChatHomeState extends State<_ChatHome> {
   String? _deviceId;
   DateTime? _listRefreshed;
 
+  late final LocationService _location = LocationService(
+    settings: widget.settings,
+    device: widget.device,
+  );
+
   @override
   void initState() {
     super.initState();
+    _api.location = _location.wire;
+    if (_location.available) widget.settings.enableLocation = _location.enable;
     final s = widget.services;
     if (s.notifications) {
       final notifier = ReplyNotifier(
@@ -531,6 +540,10 @@ class _ChatHomeState extends State<_ChatHome> {
 
   @override
   void dispose() {
+    if (widget.settings.enableLocation == _location.enable) {
+      widget.settings.enableLocation = null;
+    }
+    _location.dispose();
     _lifecycle.dispose();
     _chat.removeListener(_syncRecentChat);
     _conversations.removeListener(_syncRecentChat);
@@ -577,7 +590,10 @@ class _ChatHomeState extends State<_ChatHome> {
   }
 
   @override
-  Widget build(BuildContext context) => ChatShell(
+  Widget build(BuildContext context) =>
+      LocationScope(service: _location, child: _shell());
+
+  Widget _shell() => ChatShell(
     settings: widget.settings,
     call: widget.call,
     chat: _chat,

@@ -1,6 +1,11 @@
 package io.github.tovechat.tove
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.content.Intent
 import android.media.AudioAttributes
 import android.net.Uri
@@ -48,6 +53,10 @@ import kotlin.math.sin
  *  * `emailApp {package?}` → `true` when an email app (that package, when given: Gmail is
  *    `com.google.android.gm`) can take a draft; `composeEmail {package?, to, subject, body}` →
  *    `true` when its compose screen opened (`ACTION_SENDTO mailto:` with the extras; round 8).
+ *  * `coarseLocation {ask}` → `{lat, lng}` rounded to 2 decimals (about 1 km), or null. Only
+ *    ACCESS_COARSE_LOCATION, asked for only with `ask: true` (the user turned on "Use my approximate
+ *    location"). Android's own providers (fused on API 31+, network), no Google Play services: a recent
+ *    last-known fix, else one current fix.
  *  * `share {text, subject?}` → `true` when the system share sheet opened: plain text only
  *    (`ACTION_SEND` in a chooser), no permissions, nothing leaves the device unless the user picks a
  *    target.
@@ -87,6 +96,7 @@ internal class DeviceChannel(messenger: BinaryMessenger, activity: Activity) {
                 )
                 "moveTaskToBack" -> result.success(this.activity.get()?.moveTaskToBack(true) == true)
                 "haptic" -> result.success(haptic(call.argument<String>("kind") ?: "light"))
+                "coarseLocation" -> coarseLocation(call.argument<Boolean>("ask") == true, result)
                 "setRefreshRate" -> {
                     setRefreshRate(call.argument<Double>("hz") ?: 0.0)
                     result.success(refreshStatus())
@@ -96,7 +106,67 @@ internal class DeviceChannel(messenger: BinaryMessenger, activity: Activity) {
         }
     }
 
-    fun detach() = channel.setMethodCallHandler(null)
+    fun detach() {
+        channel.setMethodCallHandler(null)
+        pendingLocation?.success(null)
+        pendingLocation = null
+    }
+
+    private var pendingLocation: MethodChannel.Result? = null
+
+    private fun coarseLocation(ask: Boolean, result: MethodChannel.Result) {
+        val a = activity.get() ?: return result.success(null)
+        if (a.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            if (!ask || pendingLocation != null) return result.success(null)
+            pendingLocation = result
+            a.requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_LOCATION)
+            return
+        }
+        readLocation(a, result)
+    }
+
+    /** Forwarded by [MainActivity.onRequestPermissionsResult]. */
+    fun onPermissionResult(requestCode: Int) {
+        if (requestCode != REQUEST_LOCATION) return
+        val r = pendingLocation ?: return
+        pendingLocation = null
+        val a = activity.get()
+        if (a == null || a.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            r.success(null)
+        } else {
+            readLocation(a, r)
+        }
+    }
+
+    private fun coarse(l: Location): Map<String, Double> =
+        mapOf("lat" to Math.round(l.latitude * 100) / 100.0, "lng" to Math.round(l.longitude * 100) / 100.0)
+
+    @SuppressLint("MissingPermission")              // checked by the callers
+    private fun readLocation(a: Activity, result: MethodChannel.Result) {
+        val lm = a.getSystemService(LocationManager::class.java) ?: return result.success(null)
+        val providers = buildList {
+            if (Build.VERSION.SDK_INT >= 31) add(LocationManager.FUSED_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+            add(LocationManager.PASSIVE_PROVIDER)
+        }.filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+        val last = providers.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time }
+        if (last != null && System.currentTimeMillis() - last.time < 30 * 60 * 1000L) return result.success(coarse(last))
+        val current = providers.firstOrNull { it != LocationManager.PASSIVE_PROVIDER }
+        if (Build.VERSION.SDK_INT < 30 || current == null) return result.success(last?.let(::coarse))
+        var answered = false
+        val done = { loc: Location? ->
+            if (!answered) {
+                answered = true
+                result.success((loc ?: last)?.let(::coarse))
+            }
+        }
+        try {
+            lm.getCurrentLocation(current, null, a.mainExecutor) { done(it) }
+            main.postDelayed({ done(null) }, 12_000L)
+        } catch (_: Exception) {
+            done(null)
+        }
+    }
 
     private fun share(text: String, subject: String?): Boolean {
         val a = activity.get() ?: return false
@@ -327,5 +397,6 @@ internal class DeviceChannel(messenger: BinaryMessenger, activity: Activity) {
 
     companion object {
         const val NAME = "io.github.tovechat.tove/device"
+        const val REQUEST_LOCATION = 0x4853
     }
 }

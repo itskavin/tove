@@ -606,6 +606,11 @@ class _ChatRenderer extends _RendererBase {
         );
       case 'Pin':
         return const SizedBox.shrink(); // only inside a Map
+      case 'LocationButton':
+        return OuiLocationButton(
+          label: _str(p['label']) ?? 'Use my location',
+          style: s,
+        );
       case 'Quiz' || 'Question':
         final questions = [
           for (final x

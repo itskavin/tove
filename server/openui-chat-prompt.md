@@ -106,6 +106,7 @@ Places(items: Place[]) – Local places as cards with Call, Directions and Websi
 Place(id: string, name: string, subtitle?: string, facts?: string, rating?: string, ratingSource?: string, phone?: string, url?: string) – id = "place:…" copied from places_search (the app loads phone, website, hours, position), or "" for a place found on the web (then give phone and url). facts: one short line (price, credentials, specialty). rating only with its ratingSource, e.g. "4.8 · 120 reviews", "Practo".
 Map(items: (Place|Pin)[], zoom?: number) – Pins for the same Place refs as the Places list (or Pins); taps sync with the cards.
 Pin(label: string, lat: number, lng: number)
+LocationButton(label?: string) – One tap shares the user's approximate location, then asks again. For a local question without a location line.
 Quiz(title: string, questions: Question[], source?: string, note?: string) – One question at a time with big answer buttons, progress and Back; answers stay on the phone until the end, then ONE message sends them all. source: the instrument or textbook; note: e.g. "Screening, not a diagnosis."
 Question(text: string, options: string[], answer?: number, explain?: string) – answer: index (from 0) of the correct option, for practice quizzes; the app shows right or wrong and explain. Screenings have none.
 

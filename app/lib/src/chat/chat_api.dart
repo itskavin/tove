@@ -127,6 +127,11 @@ class ChatApi {
   Capabilities? _caps;
   Future<Capabilities>? _capsPending;
 
+  /// The user's approximate location for local answers (`location` on
+  /// `/api/chat`), or null. Set by the app when the setting is on; read at
+  /// each send.
+  Map<String, Object?>? Function()? location;
+
   static Uri _normalise(Uri u) {
     final path = u.path.endsWith('/')
         ? u.path.substring(0, u.path.length - 1)
@@ -431,6 +436,7 @@ class ChatApi {
     'effort': ?effort?.wire,
     'client_msg_id': ?clientMsgId,
     if (webSearch) 'web_search': true,
+    'location': ?location?.call(),
     // The UI prompt this app renders (see [uiBlocksVersion]); bridges
     // without the feature ignore the field.
     'ui': uiBlocksVersion,

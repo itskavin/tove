@@ -18,6 +18,8 @@ export 'refresh_policy.dart' show RefreshMode, RefreshPolicy;
 ///    peakSettingHz, powerSave}`: what was asked for and what caps it.
 ///  * `playTone {tones: [[hz, ms], …], gain: double}`: short sine cues on the
 ///    voice-call audio stream, so they follow the call's route.
+///  * `coarseLocation {ask}` → `{lat, lng}` (2 decimals, about 1 km) or
+///    null; asks for ACCESS_COARSE_LOCATION only when [ask].
 ///  * `share {text, subject?}` → `bool`: the system share sheet with plain
 ///    text.
 ///  * `moveTaskToBack {}` → `bool`: Back at the root minimises the app.
@@ -255,6 +257,24 @@ class DeviceServices {
       return r == true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// The device's approximate position, rounded to about 1 km on the device
+  /// (Android only; null elsewhere, without permission, or with location
+  /// off). [ask] shows the permission prompt when it is not granted yet.
+  Future<({double lat, double lng})?> coarseLocation({bool ask = false}) async {
+    if (!_android) return null;
+    try {
+      final r = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'coarseLocation',
+        {'ask': ask},
+      );
+      final lat = r?['lat'], lng = r?['lng'];
+      if (lat is! num || lng is! num) return null;
+      return (lat: lat.toDouble(), lng: lng.toDouble());
+    } catch (_) {
+      return null;
     }
   }
 

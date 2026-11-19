@@ -102,6 +102,38 @@ List<Widget> generalSection(
         ),
     ],
   ),
+  if (settings.locationSupported) ...[
+    const SectionHeader('Local answers'),
+    GroupCard(
+      margin: settingsCard,
+      children: [
+        SettingAnchor(
+          id: 'location',
+          child: SwitchRow(
+            label: 'Use my approximate location',
+            icon: Icons.near_me_outlined,
+            subtitle:
+                'For "near me" answers, each message carries your area, '
+                'rounded to about 1 km. Off by default.',
+            value: settings.locationAnswers,
+            onChanged: (on) async {
+              final ok = await settings.requestLocationAnswers(on);
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Location is off or not allowed for Tove. Turn it on in '
+                      'Android settings, then try again.',
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+      ],
+    ),
+  ],
   const SectionHeader('Sounds and haptics'),
   GroupCard(
     margin: settingsCard,
