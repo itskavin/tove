@@ -2,27 +2,34 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 
-/// Swipe up to start live voice.
+/// Pull up to start live voice (Settings › Voice › "Pull up to start a live
+/// call", on by default).
 ///
-/// **Where it starts** (the shell's `canStart`): a touch on the composer, or
-/// in the [zone] dp just above it while the thread is already at its newest
-/// text (or the chat is empty), so a thread that can still scroll keeps
-/// normal scrolling. Never with the keyboard up, in live mode, with a panel
-/// open, inside the system's bottom gesture inset (Android's home gesture),
-/// or while text is selected.
+/// **Where it arms** (the shell's `canStart`): a touch on the composer, or
+/// in the [zone] dp just above it, and only when the thread was already at
+/// rest at its newest text when the finger went down (or the chat is
+/// empty). A scroll or fling that reaches the end and overscrolls never
+/// arms it, and neither does a touch during a scroll or within
+/// [settleAfterScroll] of one ending. Never with the keyboard up, in live
+/// mode, with a panel open, inside the system's bottom gesture inset
+/// (Android's home gesture), or while text is selected above the composer.
 ///
 /// **Acceptance:** [slop] dp of upward travel within about 40° of vertical
 /// (`|dy| ≥ 1.2·|dx|`). Downward and sideways drags are left to the thread
 /// and the sidebar swipe.
 ///
-/// **Release:** live opens after [threshold] dp, or a fling of at least
-/// [flingVelocity] dp/s after [flingTravel] dp, or a quick swipe that
-/// averages that speed ([liveSwipeShouldOpen]).
+/// **Release:** live starts only when the finger lifts at least
+/// [thresholdFor] the screen height above where it went down (about 18 % of
+/// the screen, 120–160 dp) and has slowed down (under [maxReleaseVelocity]):
+/// speed never helps, a flick is not a pull, and dragging back below the
+/// threshold before lifting cancels. A hint grows
+/// with the pull ("Pull to talk", then "Release to start live" with a
+/// haptic tick at the threshold).
 ///
 /// **Lost gestures** (round 8): a finger that rests on the unfocused
 /// composer before moving loses the arena to the text field's long press
 /// (the "Paste" menu). The shell then follows that pointer itself from raw
-/// events ([onLost]) and still opens live voice on an upward swipe.
+/// events ([onLost]); the same rules apply.
 /// While dragging the composer follows with a rubber band of at most
 /// [maxOffset] dp ([liveSwipeOffset]).
 class LiveSwipeRecognizer extends VerticalDragGestureRecognizer {
@@ -45,16 +52,21 @@ class LiveSwipeRecognizer extends VerticalDragGestureRecognizer {
     super.rejectGesture(pointer);
   }
 
-  // Round 8: forgiving enough for a medium swipe (a phone's velocity
-  // estimate is often low or missing for short, quick swipes).
   static const double zone = 72;
-  static const double threshold = 56;
-  static const double flingVelocity = 380;
-  static const double flingTravel = 24;
 
-  /// A quick swipe (down to up within [quickMs]) of [flingTravel] opens too:
-  /// its velocity is measured from the whole gesture.
-  static const int quickMs = 280;
+  /// The pull that starts live: 18 % of the screen height, at least
+  /// [minPull] and at most [maxPull] dp.
+  static double thresholdFor(double screenHeight) =>
+      (screenHeight * 0.18).clamp(minPull, maxPull);
+  static const double minPull = 120;
+  static const double maxPull = 160;
+
+  /// A release faster than this (dp/s, upward) is a flick, not a pull.
+  static const double maxReleaseVelocity = 1000;
+
+  /// After a scroll or fling of the thread ends, the pull stays off this
+  /// long, so the next touch of a quick series of flicks is not a pull.
+  static const Duration settleAfterScroll = Duration(milliseconds: 600);
   static const double maxOffset = 28;
   static const double ratio = 1.2;
 
@@ -108,24 +120,14 @@ class LiveSwipeRecognizer extends VerticalDragGestureRecognizer {
   String get debugDescription => 'live swipe';
 }
 
-/// Whether a released swipe opens live voice. [travel] and [velocity] are
-/// upward-positive (dp, dp/s); [elapsed] is from pointer down to release,
-/// when known (a quick swipe's own average speed counts as a fling).
+/// Whether a released pull starts live voice: [travel] (upward-positive dp)
+/// reached [threshold] and the finger was not flicking up as it lifted
+/// ([velocity], upward-positive dp/s). Speed never makes up for length.
 bool liveSwipeShouldOpen({
   required double travel,
-  required double velocity,
-  Duration? elapsed,
-}) {
-  if (travel >= LiveSwipeRecognizer.threshold) return velocity > -300;
-  if (travel < LiveSwipeRecognizer.flingTravel) return false;
-  if (velocity >= LiveSwipeRecognizer.flingVelocity) return true;
-  final ms = elapsed?.inMilliseconds;
-  return velocity > -100 &&
-      ms != null &&
-      ms > 0 &&
-      ms <= LiveSwipeRecognizer.quickMs &&
-      travel * 1000 / ms >= LiveSwipeRecognizer.flingVelocity;
-}
+  required double threshold,
+  double velocity = 0,
+}) => travel >= threshold && velocity < LiveSwipeRecognizer.maxReleaseVelocity;
 
 /// The composer's visual lift for [travel] dp of finger travel: it follows
 /// with growing resistance and never passes [LiveSwipeRecognizer.maxOffset].

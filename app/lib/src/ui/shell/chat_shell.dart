@@ -198,6 +198,11 @@ class ChatShellState extends State<ChatShell>
   double? _backFrom;
   Timer? _scrollRefresh;
 
+  // Pull up to live arms only over a thread at rest: not while the user
+  // scrolls or flings it, nor for a moment after (live_swipe.dart).
+  bool _userScrolling = false;
+  Timer? _scrollSettle;
+
   /// The composer's laid-out height including its bottom gap; it grows with
   /// multi-line text, so the thread and the empty state keep clear of it.
   double? _composerExtent;
@@ -406,6 +411,7 @@ class ChatShellState extends State<ChatShell>
     widget.speech?.tts.removeListener(_onTts);
     _attachments?.dispose();
     _scrollRefresh?.cancel();
+    _scrollSettle?.cancel();
     unawaited(widget.device?.requestHighRefresh('scroll', false));
     _drawer.dispose();
     _tasks.dispose();
@@ -641,7 +647,22 @@ class ChatShellState extends State<ChatShell>
     }
   }
 
-  // --- swipe up to live ----------------------------------------------------
+  // --- pull up to live ----------------------------------------------------
+
+  /// How far a pull must go before release starts live (live_swipe.dart).
+  double get _livePull =>
+      LiveSwipeRecognizer.thresholdFor(MediaQuery.sizeOf(context).height);
+
+  /// The user is scrolling or flinging the thread, or just stopped.
+  bool get _threadMoving => _userScrolling || _scrollSettle != null;
+
+  void _settleScroll() {
+    _scrollSettle?.cancel();
+    _scrollSettle = Timer(
+      LiveSwipeRecognizer.settleAfterScroll,
+      () => _scrollSettle = null,
+    );
+  }
 
   /// The thread shows its newest text (nothing left to scroll toward).
   bool get _threadAtEnd {
@@ -653,17 +674,20 @@ class ChatShellState extends State<ChatShell>
     return p.maxScrollExtent - p.pixels <= 32;
   }
 
-  /// Where a swipe up to live may start (live_swipe.dart): on the composer,
-  /// or just above it while the thread is at its end; touch only; not with
-  /// the keyboard up, in live mode, with a panel open or inside the system's
-  /// bottom gesture inset. A text selection blocks it only above the
-  /// composer (round 8: a stray long press used to block it everywhere).
+  /// Where a pull up to live may start (live_swipe.dart): on the composer or
+  /// just above it, only while the thread already rests at its end (not
+  /// during or just after a scroll or fling); touch only; not when turned
+  /// off in Settings, with the keyboard up, in live mode, with a panel open
+  /// or inside the system's bottom gesture inset. A text selection blocks
+  /// it only above the composer (round 8: a stray long press used to block
+  /// it everywhere).
   bool _canLiveSwipe(PointerDownEvent e) => _liveSwipeAt(e) != null;
 
   /// Where [e] would start a swipe up to live: `true` on the composer,
   /// `false` in the zone above it, null where it cannot.
   bool? _liveSwipeAt(PointerDownEvent e) {
     if (!mounted || _liveOpen || call.inCall) return null;
+    if (!widget.settings.pullToLive) return null;
     if (e.kind != PointerDeviceKind.touch &&
         e.kind != PointerDeviceKind.stylus) {
       return null;
@@ -680,9 +704,10 @@ class ChatShellState extends State<ChatShell>
     if (pane == null || composer == null) return null;
     final y = pane.globalToLocal(e.position).dy;
     if (y > composer.bottom) return null;
-    if (y >= composer.top) return true;
     if (y < composer.top - LiveSwipeRecognizer.zone) return null;
-    if (ThreadSelection.active.value || !_threadAtEnd) return null;
+    if (_threadMoving || !_threadAtEnd) return null;
+    if (y >= composer.top) return true;
+    if (ThreadSelection.active.value) return null;
     return false;
   }
 
@@ -693,11 +718,6 @@ class ChatShellState extends State<ChatShell>
   bool _liveRawLost = false;
   bool _liveRawFollowing = false;
   VelocityTracker? _liveRawVelocity;
-
-  // Down time of the newest pointer, and its down-to-up time once lifted:
-  // a quick swipe's own average speed (liveSwipeShouldOpen).
-  Duration _pointerDownAt = Duration.zero;
-  Duration? _pointerElapsed;
 
   bool _onLiveButton(Offset global) {
     if (_liveOpen || call.inCall) return false;
@@ -722,19 +742,23 @@ class ChatShellState extends State<ChatShell>
   void _followLiveSwipe(double up) {
     final v = up.clamp(0.0, 400.0);
     _liveSwipe.value = v;
-    final crossed = v >= LiveSwipeRecognizer.threshold;
+    final crossed = v >= _livePull;
     if (crossed && !_liveSwipeCrossed) {
       _feedback?.haptic(Haptic.selection);
     }
     _liveSwipeCrossed = crossed;
   }
 
+  /// The finger lifted: live starts only past the threshold and when the
+  /// finger was not flicking ([velocity] upward-positive dp/s). A flick also
+  /// keeps the pull off for a moment, like a fling of the thread.
   void _endLiveSwipe(double velocity) {
     final open = liveSwipeShouldOpen(
       travel: _liveSwipe.value,
+      threshold: _livePull,
       velocity: velocity,
-      elapsed: _pointerElapsed,
     );
+    if (velocity >= LiveSwipeRecognizer.maxReleaseVelocity) _settleScroll();
     _releaseLiveSwipe();
     if (open) unawaited(startLive());
   }
@@ -892,6 +916,18 @@ class ChatShellState extends State<ChatShell>
   bool _onThreadNotification(Notification n) {
     if (n is! ScrollNotification || n.depth != 0) return false;
     if (n.metrics.axis != Axis.vertical) return false;
+    // The user's own drag of the thread, its fling included (and a drag that
+    // only overscrolls at the end), until it comes to rest; then a short
+    // settle before pull up to live arms again. Programmatic scrolls (a
+    // streaming reply following its end) do not count.
+    if (n is ScrollStartNotification && n.dragDetails != null) {
+      _userScrolling = true;
+      _scrollSettle?.cancel();
+      _scrollSettle = null;
+    } else if (n is ScrollEndNotification && _userScrolling) {
+      _userScrolling = false;
+      _settleScroll();
+    }
     if (n is ScrollStartNotification) {
       _scrollRefresh?.cancel();
       unawaited(widget.device?.requestHighRefresh('scroll', true));
@@ -1278,8 +1314,6 @@ class ChatShellState extends State<ChatShell>
   VelocityTracker? _rawVelocity;
 
   void _onRawDown(PointerDownEvent e) {
-    _pointerDownAt = e.timeStamp;
-    _pointerElapsed = null;
     _liveRaw = null;
     _liveRawLost = false;
     _liveRawFollowing = false;
@@ -1333,7 +1367,6 @@ class ChatShellState extends State<ChatShell>
   }
 
   void _onRawEnd(PointerEvent e) {
-    if (e is PointerUpEvent) _pointerElapsed = e.timeStamp - _pointerDownAt;
     if (e.pointer == _liveRaw) {
       _liveRaw = null;
       if (_liveRawFollowing) {
@@ -2337,32 +2370,56 @@ class ChatShellState extends State<ChatShell>
                       builder: (context, v, _) {
                         if (v <= 0) return const SizedBox.shrink();
                         final t = HermesTokens.of(context);
-                        final ready = v >= LiveSwipeRecognizer.threshold;
+                        final pull = _livePull;
+                        final ready = v >= pull;
+                        final progress = (v / pull).clamp(0.0, 1.0);
+                        final colour = ready ? t.text : t.textMuted;
+                        // Grows with the pull: the label fades in and a thin
+                        // bar fills to the threshold, where the label turns
+                        // to "Release" (with a haptic tick).
                         return Opacity(
                           key: const ValueKey('live-swipe-hint'),
-                          opacity: (v / LiveSwipeRecognizer.threshold).clamp(
-                            0.0,
-                            1.0,
-                          ),
+                          opacity: (progress * 1.6).clamp(0.0, 1.0),
                           child: Transform.translate(
                             offset: Offset(
                               0,
                               reduced ? 0 : -liveSwipeOffset(v),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                WaveGlyph(
-                                  color: ready ? t.text : t.textMuted,
-                                  size: 16,
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    WaveGlyph(color: colour, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      ready
+                                          ? 'Release to start live'
+                                          : 'Pull to talk',
+                                      style: t.label.copyWith(color: colour),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  ready
-                                      ? 'Release for live voice'
-                                      : 'Swipe up for live voice',
-                                  style: t.label.copyWith(
-                                    color: ready ? t.text : t.textMuted,
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  key: const ValueKey('live-swipe-progress'),
+                                  width: 56,
+                                  height: 3,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: FractionallySizedBox(
+                                      widthFactor: progress,
+                                      heightFactor: 1,
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          color: colour,
+                                          borderRadius: BorderRadius.circular(
+                                            2,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],

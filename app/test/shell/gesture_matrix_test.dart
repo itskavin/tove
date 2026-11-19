@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show debugOnRebuildDirtyWidget;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart'
-    show Axis, Scrollable, ScrollableState, ValueKey;
+    show Axis, Scrollable, ScrollableState, ScrollPosition, ValueKey;
 import 'package:tove_chat/src/app.dart';
 import 'package:tove_chat/src/call/call_controller.dart';
 import 'package:tove_chat/src/chat/chat.dart';
@@ -324,53 +324,10 @@ void main() {
     });
   });
 
-  group('swipe up to live at any pace', () {
-    for (final pace in {
-      'slow': (dist: 120.0, steps: 40, ms: 16),
-      'light flick': (dist: 44.0, steps: 3, ms: 16),
-      'fast flick': (dist: 120.0, steps: 3, ms: 10),
-    }.entries) {
-      testWidgets('${pace.key} up from the composer opens live voice', (
-        tester,
-      ) async {
-        await boot(tester);
-        final p = pace.value;
-        await drag(
-          tester,
-          composerRect(tester).center,
-          Offset(3, -p.dist),
-          steps: p.steps,
-          frame: Duration(milliseconds: p.ms),
-        );
-        await tester.runAsync(() => settle(20));
-        await advance(tester, 600);
-        expect(liveOpen(), findsWidgets, reason: pace.key);
-        await tester.runAsync(() => call.end());
-        await advance(tester, 800);
-      });
-    }
-
-    testWidgets('a swipe up just above the composer of a chat at its end', (
-      tester,
-    ) async {
-      await boot(tester, setup: seed);
-      await openChat(tester, 'Disk check');
-      await drag(
-        tester,
-        Offset(200, composerRect(tester).top - 20),
-        const Offset(0, -120),
-        steps: 8,
-      );
-      await tester.runAsync(() => settle(20));
-      await advance(tester, 600);
-      expect(liveOpen(), findsWidgets);
-      await tester.runAsync(() => call.end());
-      await advance(tester, 800);
-    });
-  });
-
-  // Round 8 (video 2): the causes of the intermittent swipe up.
-  group('swipe up to live: round 8 causes', () {
+  // Pull up to live (round 11): deliberate only. It arms over a thread
+  // already at rest at its end, needs about 18 % of the screen (160 dp on
+  // this 915 dp phone) and starts on release past that; speed never counts.
+  group('pull up to live', () {
     void phoneSlop(WidgetTester tester) {
       tester.view.gestureSettings = const ui.GestureSettings(
         physicalTouchSlop: 8,
@@ -386,56 +343,59 @@ void main() {
       await advance(tester, 800);
     }
 
-    testWidgets('a finger that rests on the composer (its long press wins: '
-        'the Paste menu) and then swipes up still opens live', (tester) async {
-      await boot(tester, setup: seed);
-      phoneSlop(tester);
-      await openChat(tester, 'Disk check');
-      var t = const Duration(seconds: 1);
-      final g = await tester.createGesture();
-      await g.down(composerRect(tester).center, timeStamp: t);
-      for (var i = 0; i < 8; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      t += const Duration(milliseconds: 800);
-      for (var i = 0; i < 10; i++) {
-        t += const Duration(milliseconds: 16);
-        await g.moveBy(const Offset(0, -12), timeStamp: t);
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      await g.up(timeStamp: t);
-      await expectLive(tester, 'after a long press');
-    });
+    Future<void> expectNoLive(WidgetTester tester, String why) async {
+      await tester.runAsync(() => settle(20));
+      await advance(tester, 600);
+      expect(liveOpen(), findsNothing, reason: why);
+      expect(bridge.to('/api/session'), isEmpty, reason: why);
+    }
 
-    testWidgets('a stray text selection no longer blocks it from the '
-        'composer, and is cleared', (tester) async {
-      await boot(tester, setup: seed);
-      phoneSlop(tester);
-      await openChat(tester, 'Disk check');
-      var cleared = false;
-      ThreadSelection.set('stray', true, clear: () => cleared = true);
-      addTearDown(() => ThreadSelection.set('stray', false));
+    ScrollPosition threadScroll(WidgetTester tester) => tester
+        .stateList<ScrollableState>(find.byType(Scrollable))
+        .map((s) => s.position)
+        .firstWhere((p) => p.axis == Axis.vertical && p.maxScrollExtent > 0);
+
+    void longChat(FakeBridge b) => seed(
+      b,
+      reply: List.generate(40, (i) => 'Paragraph ${i + 1}.').join('\n\n'),
+    );
+
+    testWidgets('a slow pull from the composer past the threshold, released, '
+        'starts live', (tester) async {
+      await boot(tester);
       await drag(
         tester,
         composerRect(tester).center,
-        const Offset(0, -90),
-        steps: 8,
+        const Offset(3, -200),
+        steps: 50,
       );
-      expect(cleared, isTrue);
-      expect(ThreadSelection.active.value, isFalse);
-      await expectLive(tester, 'with a selection');
+      await expectLive(tester, 'slow pull of 200 dp');
+    });
+
+    testWidgets('just above the composer of a chat at rest at its end', (
+      tester,
+    ) async {
+      await boot(tester, setup: longChat);
+      phoneSlop(tester);
+      await openChat(tester, 'Disk check');
+      await drag(
+        tester,
+        Offset(200, composerRect(tester).top - 24),
+        const Offset(0, -200),
+        steps: 50,
+      );
+      await expectLive(tester, 'from the zone above the composer');
     });
 
     for (final pace in {
-      'medium (64 dp at ~400 dp/s, stops before lifting)': (
-        dist: 64.0,
-        steps: 10,
-        ms: 16,
-      ),
-      'short quick (40 dp in 3 frames)': (dist: 40.0, steps: 3, ms: 16),
+      'light flick (44 dp in 3 frames)': (dist: 44.0, steps: 3, ms: 16),
+      'fast flick (140 dp in 3 frames)': (dist: 140.0, steps: 3, ms: 10),
       'very fast (150 dp in 2 frames)': (dist: 150.0, steps: 2, ms: 8),
+      'slow but short (100 dp)': (dist: 100.0, steps: 30, ms: 16),
     }.entries) {
-      testWidgets('${pace.key} from the composer opens live', (tester) async {
+      testWidgets('${pace.key} from the composer does not start live', (
+        tester,
+      ) async {
         await boot(tester, setup: seed);
         phoneSlop(tester);
         await openChat(tester, 'Disk check');
@@ -447,34 +407,164 @@ void main() {
           steps: p.steps,
           frame: Duration(milliseconds: p.ms),
         );
-        await expectLive(tester, pace.key);
+        await expectNoLive(tester, pace.key);
+        expect(find.byKey(const ValueKey('live-swipe-hint')), findsNothing);
       });
     }
 
-    testWidgets('just above the composer of a long chat 20 dp short of its '
-        'end', (tester) async {
-      await boot(
-        tester,
-        setup: (b) => seed(
-          b,
-          reply: List.generate(40, (i) => 'Paragraph ${i + 1}.').join('\n\n'),
-        ),
-      );
+    testWidgets('dragging back below the threshold before release cancels', (
+      tester,
+    ) async {
+      await boot(tester);
+      final g = await tester.startGesture(composerRect(tester).center);
+      for (var i = 0; i < 20; i++) {
+        await g.moveBy(const Offset(0, -10));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(find.text('Release to start live'), findsOneWidget);
+      for (var i = 0; i < 8; i++) {
+        await g.moveBy(const Offset(0, 10));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(find.text('Pull to talk'), findsOneWidget);
+      await g.up();
+      await expectNoLive(tester, 'released at 120 dp after reaching 200');
+    });
+
+    testWidgets('a fling that reaches the end of the thread and overscrolls '
+        'never starts live, nor does a pull right after it', (tester) async {
+      await boot(tester, setup: longChat);
       phoneSlop(tester);
       await openChat(tester, 'Disk check');
-      final scroll = tester
-          .stateList<ScrollableState>(find.byType(Scrollable))
-          .map((s) => s.position)
-          .firstWhere((p) => p.axis == Axis.vertical && p.maxScrollExtent > 0);
-      scroll.jumpTo(scroll.maxScrollExtent - 20);
+      final scroll = threadScroll(tester);
+      scroll.jumpTo(scroll.maxScrollExtent - 500);
+      await tester.pump();
+      // Fling toward the end from just above the composer: the thread was
+      // not at its end when the finger went down.
+      await tester.flingFrom(
+        Offset(200, composerRect(tester).top - 30),
+        const Offset(0, -260),
+        3000,
+      );
+      for (var i = 0; i < 300 && scroll.isScrollingNotifier.value; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(scroll.pixels, closeTo(scroll.maxScrollExtent, 1));
+      await expectNoLive(tester, 'fling into the end');
+
+      // A second fling at the end overscrolls: still nothing.
+      await tester.flingFrom(
+        Offset(200, composerRect(tester).top - 30),
+        const Offset(0, -260),
+        3000,
+      );
+      for (var i = 0; i < 300 && scroll.isScrollingNotifier.value; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(liveOpen(), findsNothing, reason: 'a fling at the end');
+      // At once (within 600 ms of the fling): a slow, full pull does nothing.
+      await drag(
+        tester,
+        composerRect(tester).center,
+        const Offset(0, -200),
+        steps: 50,
+      );
+      await expectNoLive(tester, 'within 600 ms of a fling');
+
+      // At rest: the same pull starts live.
+      await advance(tester, 800);
+      await drag(
+        tester,
+        composerRect(tester).center,
+        const Offset(0, -200),
+        steps: 50,
+      );
+      await expectLive(tester, 'after the thread settled');
+    });
+
+    testWidgets('a chat scrolled up from its end does not arm it', (
+      tester,
+    ) async {
+      await boot(tester, setup: longChat);
+      phoneSlop(tester);
+      await openChat(tester, 'Disk check');
+      final scroll = threadScroll(tester);
+      scroll.jumpTo(scroll.maxScrollExtent - 300);
+      await tester.pump();
+      await advance(tester, 800);
+      await drag(
+        tester,
+        composerRect(tester).center,
+        const Offset(0, -200),
+        steps: 50,
+      );
+      await expectNoLive(tester, 'thread not at its end');
+    });
+
+    testWidgets('turned off in Settings, a full pull does nothing', (
+      tester,
+    ) async {
+      final prefs = MemoryPrefsStore()..values['pullToLive'] = 'false';
+      await boot(tester, prefs: prefs);
+      expect(settings.pullToLive, isFalse);
+      await drag(
+        tester,
+        composerRect(tester).center,
+        const Offset(0, -220),
+        steps: 50,
+      );
+      await expectNoLive(tester, 'setting off');
+      expect(find.byKey(const ValueKey('live-swipe-hint')), findsNothing);
+      // The live button still works.
+      await settings.setPullToLive(true);
       await tester.pump();
       await drag(
         tester,
-        Offset(200, composerRect(tester).top - 30),
-        const Offset(0, -100),
-        steps: 12,
+        composerRect(tester).center,
+        const Offset(0, -220),
+        steps: 50,
       );
-      await expectLive(tester, 'near the end');
+      await expectLive(tester, 'setting back on');
+    });
+
+    testWidgets('a finger that rests on the composer (its long press wins: '
+        'the Paste menu) and then pulls up still starts live', (tester) async {
+      await boot(tester, setup: seed);
+      phoneSlop(tester);
+      await openChat(tester, 'Disk check');
+      var t = const Duration(seconds: 1);
+      final g = await tester.createGesture();
+      await g.down(composerRect(tester).center, timeStamp: t);
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      t += const Duration(milliseconds: 800);
+      for (var i = 0; i < 18; i++) {
+        t += const Duration(milliseconds: 16);
+        await g.moveBy(const Offset(0, -12), timeStamp: t);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up(timeStamp: t);
+      await expectLive(tester, 'after a long press');
+    });
+
+    testWidgets('a stray text selection does not block it from the '
+        'composer, and is cleared', (tester) async {
+      await boot(tester, setup: seed);
+      phoneSlop(tester);
+      await openChat(tester, 'Disk check');
+      var cleared = false;
+      ThreadSelection.set('stray', true, clear: () => cleared = true);
+      addTearDown(() => ThreadSelection.set('stray', false));
+      await drag(
+        tester,
+        composerRect(tester).center,
+        const Offset(0, -200),
+        steps: 40,
+      );
+      expect(cleared, isTrue);
+      expect(ThreadSelection.active.value, isFalse);
+      await expectLive(tester, 'with a selection');
     });
   });
 
@@ -488,49 +578,6 @@ void main() {
       );
       addTearDown(tester.view.resetGestureSettings);
     }
-
-    testWidgets('a light flick up from the composer opens live voice', (
-      tester,
-    ) async {
-      await boot(tester, setup: seed);
-      phoneSlop(tester);
-      await openChat(tester, 'Disk check');
-      await drag(
-        tester,
-        composerRect(tester).center,
-        const Offset(2, -60),
-        steps: 3,
-      );
-      await tester.runAsync(() => settle(20));
-      await advance(tester, 600);
-      expect(liveOpen(), findsWidgets);
-      await tester.runAsync(() => call.end());
-      await advance(tester, 800);
-    });
-
-    testWidgets('a slow swipe up just above the composer of a long chat at '
-        'its end opens live voice', (tester) async {
-      await boot(
-        tester,
-        setup: (b) => seed(
-          b,
-          reply: List.generate(40, (i) => 'Paragraph ${i + 1}.').join('\n\n'),
-        ),
-      );
-      phoneSlop(tester);
-      await openChat(tester, 'Disk check');
-      await drag(
-        tester,
-        Offset(200, composerRect(tester).top - 24),
-        const Offset(0, -130),
-        steps: 40,
-      );
-      await tester.runAsync(() => settle(20));
-      await advance(tester, 600);
-      expect(liveOpen(), findsWidgets);
-      await tester.runAsync(() => call.end());
-      await advance(tester, 800);
-    });
 
     for (final where in ['reply text', 'composer']) {
       testWidgets('light sideways swipes on $where open both panels', (

@@ -148,6 +148,7 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
   bool _reduceMotion = false;
   bool _sounds = true;
   bool _haptics = true;
+  bool _pullToLive = true;
   bool _locationAnswers = false;
   bool _sidebarCollapsed = false;
   TextSize _textSize = TextSize.standard;
@@ -214,6 +215,9 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
   bool get sounds => _sounds;
   bool get haptics => _haptics;
 
+  /// Pulling up from the composer starts a live call (on by default).
+  bool get pullToLive => _pullToLive;
+
   /// "Use my approximate location for local answers" (off by default): the
   /// app sends a coarse position (about 1 km) with each chat message.
   bool get locationAnswers => _locationAnswers;
@@ -244,6 +248,7 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
       _effort = _pick(ReplyEffort.values, await prefs.get('effort'), _effort);
       _sounds = await prefs.get('sounds') != 'false';
       _haptics = await prefs.get('haptics') != 'false';
+      _pullToLive = await prefs.get('pullToLive') != 'false';
       _locationAnswers = await prefs.get('location_answers') == 'true';
       _sidebarCollapsed = await prefs.get('sidebarCollapsed') == 'true';
       _accent = _pick(AccentColour.values, await prefs.get('accent'), _accent);
@@ -477,6 +482,13 @@ class SettingsController extends ChangeNotifier implements SyncSlice {
     _locationAnswers = on;
     notifyListeners();
     await _setPref('location_answers', '$on');
+  }
+
+  Future<void> setPullToLive(bool on) async {
+    if (on == _pullToLive) return;
+    _pullToLive = on;
+    notifyListeners();
+    await _setPref('pullToLive', '$on');
   }
 
   Future<void> setHaptics(bool on) async {

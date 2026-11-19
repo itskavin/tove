@@ -101,7 +101,8 @@ void main() {
   Rect composer(WidgetTester tester) => tester.getRect(find.byType(Composer));
 
   Future<void> swipeUpToLive(WidgetTester tester) async {
-    await drag(tester, composer(tester).center, const Offset(2, -140));
+    // A deliberate pull past the threshold (about 18 % of the screen).
+    await drag(tester, composer(tester).center, const Offset(2, -200));
     await tester.runAsync(() => settle(20));
     await advance(tester, 600);
   }

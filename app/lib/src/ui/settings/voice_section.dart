@@ -131,6 +131,17 @@ List<Widget> voiceSection(
           ),
         ),
       ),
+      SettingAnchor(
+        id: 'pullToLive',
+        child: SwitchRow(
+          key: const ValueKey('settings-pull-to-live'),
+          label: 'Pull up to start a live call',
+          icon: Icons.swipe_up_rounded,
+          subtitle: 'Pull up from the bottom of a chat and let go.',
+          value: settings.pullToLive,
+          onChanged: settings.setPullToLive,
+        ),
+      ),
       if (backend != null)
         SettingAnchor(
           id: 'liveBackend',

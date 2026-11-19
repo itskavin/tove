@@ -303,31 +303,14 @@ void main() {
       expect(LiveSwipeRecognizer.accepts(const Offset(0, -10)), isFalse);
       expect(LiveSwipeRecognizer.accepts(const Offset(0, 40)), isFalse);
       expect(LiveSwipeRecognizer.accepts(const Offset(30, -20)), isFalse);
-      expect(liveSwipeShouldOpen(travel: 90, velocity: 0), isTrue);
-      expect(liveSwipeShouldOpen(travel: 50, velocity: 100), isFalse);
-      expect(liveSwipeShouldOpen(travel: 40, velocity: 900), isTrue);
-      expect(liveSwipeShouldOpen(travel: 90, velocity: -800), isFalse);
-      // Round 8: a medium swipe and a quick one whose velocity was missed.
-      expect(liveSwipeShouldOpen(travel: 58, velocity: 0), isTrue);
-      expect(liveSwipeShouldOpen(travel: 30, velocity: 420), isTrue);
-      expect(liveSwipeShouldOpen(travel: 20, velocity: 2000), isFalse);
-      expect(
-        liveSwipeShouldOpen(
-          travel: 40,
-          velocity: 0,
-          elapsed: const Duration(milliseconds: 90),
-        ),
-        isTrue,
-      );
-      expect(
-        liveSwipeShouldOpen(
-          travel: 40,
-          velocity: 0,
-          elapsed: const Duration(milliseconds: 600),
-        ),
-        isFalse,
-        reason: 'slow and short: not a swipe to live',
-      );
+      // Only the pull's length counts at release, never its speed.
+      expect(liveSwipeShouldOpen(travel: 160, threshold: 160), isTrue);
+      expect(liveSwipeShouldOpen(travel: 159, threshold: 160), isFalse);
+      expect(liveSwipeShouldOpen(travel: 60, threshold: 120), isFalse);
+      // About 18 % of the screen, 120–160 dp.
+      expect(LiveSwipeRecognizer.thresholdFor(915), 160);
+      expect(LiveSwipeRecognizer.thresholdFor(780), closeTo(140.4, 0.01));
+      expect(LiveSwipeRecognizer.thresholdFor(500), 120);
       expect(liveSwipeOffset(0), 0);
       expect(liveSwipeOffset(1000), lessThanOrEqualTo(28));
       expect(liveSwipeOffset(40), lessThan(40));
@@ -340,13 +323,19 @@ void main() {
       await boot(tester);
       final start = composerRect(tester).center;
       final g = await tester.startGesture(start);
-      for (var i = 0; i < 12; i++) {
+      for (var i = 0; i < 8; i++) {
         await g.moveBy(const Offset(0, -10));
         await tester.pump(const Duration(milliseconds: 16));
       }
-      // The rubber band lifts the composer and shows the hint.
+      // The rubber band lifts the composer and the hint grows.
       expect(composerRect(tester).center.dy, lessThan(start.dy - 10));
-      expect(find.text('Release for live voice'), findsOneWidget);
+      expect(find.text('Pull to talk'), findsOneWidget);
+      expect(feedback.haptics, isNot(contains(Haptic.selection)));
+      for (var i = 0; i < 10; i++) {
+        await g.moveBy(const Offset(0, -10));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(find.text('Release to start live'), findsOneWidget);
       expect(feedback.haptics, contains(Haptic.selection));
       await g.up();
       await tester.pump();

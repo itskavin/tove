@@ -128,6 +128,27 @@ void main() {
       expect(editing(), isFalse);
     });
 
+    testWidgets('"Pull up to start a live call" is found, on by default, and '
+        'turns off', (tester) async {
+      await open(tester);
+      expect(settings.pullToLive, isTrue);
+      await tester.enterText(
+        find.byKey(const ValueKey('settings-search')),
+        'accidental',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-result-pullToLive')),
+      );
+      await tester.pumpAndSettle();
+      final row = find.text('Pull up to start a live call');
+      expect(row.hitTestable(), findsOneWidget);
+      await tester.tap(row);
+      await tester.pump();
+      expect(settings.pullToLive, isFalse);
+      expect(prefs.values['pullToLive'], 'false', reason: 'persisted');
+    });
+
     testWidgets('no results says so, and Clear brings the categories back', (
       tester,
     ) async {

@@ -141,6 +141,12 @@ List<SettingsEntry> settingsIndex({
   const SettingsEntry('voice', 'Live voice', SettingsSection.voice, [
     'voice', 'speaker', 'persona', 'gpt-live', 'call', //
   ]),
+  const SettingsEntry(
+    'pullToLive',
+    'Pull up to start a live call',
+    SettingsSection.voice,
+    ['pull', 'swipe up', 'gesture', 'accidental', 'live', 'call'],
+  ),
   if (liveBackend)
     const SettingsEntry('liveBackend', 'Voice service', SettingsSection.voice, [
       'backend', 'codex', 'openai', 'minutes', 'live api', 'budget', //
