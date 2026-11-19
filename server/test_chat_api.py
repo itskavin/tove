@@ -35,6 +35,7 @@ class FakeHermes:
         self.release = asyncio.Event()                  # "gated": the reply finishes only once this is set
         self.fail_delay = 0.0
         self.title = '"Greeting The World."'
+        self.json_text = "Whole reply at once."             # the "json" mode's reply
 
     def chunk(self, delta, finish=None, usage=None):
         obj = {"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
@@ -51,7 +52,7 @@ class FakeHermes:
             await asyncio.sleep(self.fail_delay)
             return web.json_response({"error": {"message": "boom"}}, status=500)
         if self.mode == "json":
-            return web.json_response({"choices": [{"message": {"content": "Whole reply at once."}, "finish_reason": "stop"}],
+            return web.json_response({"choices": [{"message": {"content": self.json_text}, "finish_reason": "stop"}],
                                       "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7}})
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await resp.prepare(req)
@@ -773,7 +774,7 @@ class ChatApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((data["answer"], data["conversation_id"]), ("v=0 fake answer", conv["id"]))
         ds = bridge.DIRECT["s"]
         self.assertEqual([m["content"] for m in ds.history], ["typed %d" % i for i in range(2, 10)])
-        self.assertEqual(self.store.get_conversation(conv["id"])["kind"], "live")
+        self.assertEqual(self.store.get_conversation(conv["id"])["kind"], "text")     # typed chat: keeps its kind
         # A linked call's task is a chat message from the start, written by the fake Hermes ("Hello world").
         job = (await (await self.client.post("/api/delegate", json={"session": ds.id, "text": "check the disk"}, headers=AUTH)).json())["job"]
         self.assertTrue(await self.wait_for(lambda: ds.jobs[job]["status"] == "done"))

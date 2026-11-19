@@ -633,7 +633,7 @@ chat, as before.
 |---|---|---|
 | `conversation.created` | `{"conversation_id", "conversation"}` | A chat is created (`POST /api/conversations`, the first `/api/chat` message, a notify chat) |
 | `conversation.title` | `{"conversation_id", "title", "title_source", "conversation"}` | A rename (`PATCH`), or an automatic title (rule-based or Hermes, `title_source` `auto`/`hermes`) |
-| `conversation.updated` | `{"conversation_id", "changes": [...], "conversation"}` | `changes` is `["pinned"]` (pin/unpin), `["kind"]` (the chat became `live`) or `["messages"]` (a transcript import added messages: one event for the whole import, not one per turn) |
+| `conversation.updated` | `{"conversation_id", "changes": [...], "conversation"}` | `changes` is `["pinned"]` (pin/unpin), `["kind"]` (the chat became `live`: a call left something in a chat that has no typed messages) or `["messages"]` (a transcript import added messages: one event for the whole import, not one per turn) |
 | `conversation.deleted` | `{"conversation_id"}` | The chat and its messages are gone |
 | `message.created` | `{"conversation_id", "message_id", "message", "conversation"}` | Any new message: the user's, an assistant reply's placeholder (`status: streaming`, empty text), a live task (`source: task`), a notify message |
 | `message.deleted` | `{"conversation_id", "message_id"}` | `DELETE …/messages/{mid}`, or a retry dropping the old reply |
@@ -671,8 +671,10 @@ Conversation object:
  "message_count": 4}
 ```
 
-- `kind` becomes `live` once a live call is linked to the chat or a transcript is imported into it. Show the
-  waveform glyph for these chats.
+- `kind` becomes `live` once a call leaves something in the chat (a task message or imported voice turns) and the
+  chat has no typed messages. Show the waveform glyph for these chats. Starting a call changes nothing: a call that
+  ends without speech leaves the chat's `kind` and `updated` (its place in the list) as they were, and a call in a
+  typed chat keeps it `text` (its voice turns are `source: voice` messages, which carry their own marker).
 - `updated` changes with every new message and live link. It does not change on rename or pin, so the chat keeps
   its place in the list.
 
@@ -862,13 +864,26 @@ Messages are ordered by `created`, then by insertion. Message order is stable.
   malformed id gives `400 bad_conversation_id`, and an unavailable history gives `503 history_unavailable`.
 - Delegated Hermes tasks in that call start with the chat's newest 8 messages as context (at most 2000 characters
   each and 6000 in total).
-- The chat becomes `kind: live`.
+- Starting the call does not change the chat (see `kind` under Conversations): it becomes `kind: live` only when the
+  call leaves a task or voice turns in it and nothing in it was typed.
 - Success: `200 {"session", "answer", "conversation_id"}`. `conversation_id` is `null` when the call is not linked.
 - **Task results are saved by the bridge.** Since round 5 (capability `task_messages`) a delegated job of a linked
   call is a `source: task`, `role: assistant` message from the moment it starts, streamed like a reply; see "Live
   tasks in the chat". Its `client_id` is `job:<session>:<job>`, `meta` holds `task`, `job`, `session` and (at the end)
   `seconds`. A failed job ends with `status: error`, keeping any text that arrived. (Older bridges added the message
   only at the end, with empty text on failure.)
+- **The call's context goes with each task.** `POST /api/delegate`
+  `{"session", "text", "context"?: [{"role": "user|assistant", "text"}], "location"?}`. GPT-Live's delegation item
+  holds only the voice model's task text, often just the user's last sentence, and Hermes does not hear the call. So
+  the app sends the call's newest transcript turns, oldest first (at most 50; the bridge keeps the newest 10 within
+  3000 characters, each cut to 2000), and `location` as on `/api/chat` when the user shares it. Hermes then gets
+  `Earlier in this call (voice transcript):` with those turns, the location line, and `The request to handle now:
+  <text>`; a last user turn that only repeats `text` is left out. The task note tells Hermes it is mid-call: no
+  greeting, take the goal and details from the call, assume sensible defaults instead of asking. The chat message's
+  `meta.task` and the job's `request` stay the short `text`. Without `context` nothing changes. The openai backend
+  does the same from its own transcript. Errors: `400 bad_context`, `400 bad_request`.
+- The spoken copy of a task result (`answer`) drops an opening greeting ("Hey, Sam."), which belongs only at the
+  start of a call; `markdown` and the chat message keep Hermes' text.
 - `GET /api/job/{sid}/{jid}` now also returns `markdown` (Hermes' original reply, for the live canvas) next to
   `answer`, the voice-ready plain text:
   `{"status": "running|done|failed", "answer", "markdown", "seconds", "status_event"?, "partial"?}`.
@@ -1520,7 +1535,7 @@ server did not take the report.
 
 | Route | Code |
 |---|---|
-| `/api/delegate` | `bad_task` (no session or empty task), `hermes_unconfigured`, `busy` (429: 2 jobs running in this call, or 4 across all calls, counting tasks of calls that have ended) |
+| `/api/delegate` | `bad_task` (no session or empty task), `bad_context`, `bad_request` (a `location` that is not an object), `hermes_unconfigured`, `busy` (429: 2 jobs running in this call, or 4 across all calls, counting tasks of calls that have ended) |
 | `/api/job/{sid}/{jid}` | `not_found` |
 | `/api/session/{sid}/jobs` | `not_found` (no such running call) |
 

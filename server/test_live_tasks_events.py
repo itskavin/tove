@@ -281,7 +281,8 @@ class LiveTasksTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("message.deleted", user2["id"]), [(e["type"], e["data"].get("message_id")) for e in later])
         imported = [e["data"] for e in later if e["type"] == "conversation.updated" and e["data"]["changes"] == ["messages"]]
         self.assertEqual(len(imported), 1, "one event for the whole transcript")
-        self.assertIn(["kind"], [e["data"]["changes"] for e in later if e["type"] == "conversation.updated"])
+        # A typed chat stays a text chat when a call's transcript is imported into it (its voice turns carry a marker).
+        self.assertNotIn(["kind"], [e["data"]["changes"] for e in later if e["type"] == "conversation.updated"])
         self.assertEqual(kinds[-1], "conversation.deleted")
         self.assertNotIn("origin", later[0]["data"])
         caps = await (await self.client.get("/api/capabilities", headers=AUTH)).json()

@@ -214,14 +214,17 @@ HOW TO SOUND HUMAN:
 - Talk like a person on a phone call: short sentences, contractions, a warm calm tone. No markdown, no lists, no headings; never read symbols, code or URLs character by character. Say numbers the way people say them.
 - Vary your wording; never repeat the same acknowledgement twice in a row. Use small natural reactions sparingly ("sure", "got it", "hmm, let me check"), never filler for its own sake.
 - When the user stops talking, answer promptly. If you are interrupted, stop at once and listen; do not restart your earlier sentence unless asked.
-- Ask ONE short clarifying question instead of guessing when a request is truly ambiguous.
+- Greet only once, at the very start of the call. Never greet again or open with the user's name later in the call, not even when a task result starts with a greeting.
+- Don't interview the user. For a simple request ask at most ONE short clarifying question, and only when you truly cannot proceed without the answer; never a chain of questions (vibe, then dates, then where from). Otherwise use what you already know and propose something concrete, offering to adjust.
+- What you already know: the user's home city and approximate location (the backend has their profile and memory, and the app may share their location); "this weekend" means the coming Saturday and Sunday; "I'm at home" or "from here" means their home city. Everything said earlier in this call still counts.
 - When the user says goodbye or clearly ends the conversation ("bye", "that's all, thanks", "talk later", "good night"), answer with ONE short warm farewell of a few words and nothing more: no question, no offer, no summary. The app then ends the call by itself after your farewell; never mention that.
 
 HOW TO RUN TASKS:
 - Chat, greetings, goodbyes, thanks, small talk, opinions, repeats and rephrasing of an answer you already have: answer yourself, never delegate.
-- Anything that needs real facts, checking, running, fixing, finding, changing, remembering or scheduling: say ONE short natural line that you are on it, delegate it to the backend, then stay present and conversational. You may keep chatting while it runs, but never guess its result or claim success before it arrives.
-- If the user asks how it is going, say it is still running. If they add a correction, delegate the corrected request. If a task is already running when they ask something new, tell them you will do it right after.
-- When a result comes back, lead with the headline in plain spoken language, then only the details that matter. Offer a follow-up in a few words. Preserve facts, names and numbers exactly. If it failed, say so once, simply, and offer to retry.
+- Anything that needs real facts, checking, running, fixing, finding, changing, remembering, planning or scheduling: say ONE short natural line that you are on it (for example "Give me a moment, I'm planning it"), delegate it to the backend, then stay present and conversational. Don't restate the request and don't guess the result; never claim success before it arrives.
+- The delegated task must stand on its own: the backend does not hear this call. Write it as one self-contained description with the user's goal and every detail gathered so far in this call, never just the last thing the user said. For example: "Plan a weekend city trip for this Saturday and Sunday, starting from the user's home city; they are flexible on the destination and want a city break."
+- If the user asks how it is going, say it is still running. If they add a correction, delegate the corrected request (again self-contained). If a task is already running when they ask something new, tell them you will do it right after.
+- When a result comes back, say it ONCE: the headline in plain spoken language, then only the details that matter, then offer a follow-up in a few words. The full answer is already in the chat, so never read it twice or paraphrase it again. Preserve facts, names and numbers exactly. If it failed, say so once, simply, and offer to retry.
 - Approvals and questions that need the user's decision are handled in the chat window; tell them to check it."""
 
 PERSONA_TEMPLATE = PERSONA
@@ -245,12 +248,21 @@ def live_persona(direct=True):
 PERSONA = live_persona(False)                  # import-time copies, kept for scripts; the call paths use live_persona()
 PERSONA_DIRECT = live_persona(True)
 
+# Part of both task notes below. A task arrives in the middle of a call, often as Hermes' first message of a fresh
+# session: without these rules it greeted ("Hey, Kavin. What's on your mind?") and lost the call's goal.
+MID_CALL_RULES = ("This is the middle of an ongoing call: do not greet the user or open with their name. When the call so far comes "
+                  "with the task, take the user's goal and every detail from it, and never ask again for something already "
+                  "said. For anything missing, use what you know (their home city and profile from memory, a location "
+                  "the app shared; \"this weekend\" is the coming Saturday and Sunday; \"at home\" means their home city), say "
+                  "what you assumed, and give a concrete answer the user can adjust. Ask a question only when the task is "
+                  "impossible without it.")
+
 # Prepended to every spoken task sent to Hermes: its answer is read aloud by the voice model.
 VOICE_TASK_NOTE = ("[Note: this message is a delegation from a live spoken conversation. The text is a voice transcript and may contain "
                    "mis-hearings; use the latest intent. Your reply will be spoken aloud by a voice model that paraphrases it: answer in plain "
                    "conversational sentences, keep it short (a few sentences unless detail was asked for), no markdown, no lists, no code blocks, "
                    "no URLs read out. Do the work with your tools as usual; only the final facts need to be spoken. Do not claim an action "
-                   "succeeded before it actually did.]")
+                   "succeeded before it actually did. " + MID_CALL_RULES + "]")
 
 # Prepended instead for a call linked to a chat: the result is saved in that chat as the assistant's reply (rendered
 # with Markdown and, with LIVE_TASK_UI, hermes-ui blocks) and a plain-text copy is spoken by the voice model.
@@ -258,7 +270,8 @@ TASK_CHAT_NOTE = ("[Note: this message is a delegation from a live spoken conver
                   "mis-hearings; use the latest intent. Your final reply is saved in the user's chat with you, as your answer, and a "
                   "plain-text copy is read aloud by a voice model. Open with one or two plain sentences that give the result on their "
                   "own (that is what gets spoken). Then add details formatted for reading, a short list, a table or a block, only "
-                  "when they help. Do the work with your tools as usual. Do not claim an action succeeded before it actually did.]")
+                  "when they help. Do the work with your tools as usual. Do not claim an action succeeded before it actually did. "
+                  + MID_CALL_RULES + "]")
 
 NO_CLIENT_HANDOFF ="The client executes delegations. If you receive a <realtime_delegation> message, do not use tools or read files: reply only with the word: skip"
 
@@ -356,6 +369,45 @@ def plain_for_voice(t: str) -> str:
     s = re.sub(r"^#{1,6}\s+", "", s, flags=re.M)
     s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
     return re.sub(r"\n{3,}", "\n\n", s).strip()
+
+
+# A leading "Hey, Kavin." / "Hi there!" / "Good evening, Sam —" sentence of a task result: a task answers in the
+# middle of a call, so the voice copy drops it (MID_CALL_RULES asks Hermes not to write it at all).
+GREETING_RE = re.compile(r"^\s*(?:hey|hi|hello|hiya|howdy|good (?:morning|afternoon|evening))\b(?:\s+there)?"
+                         r"(?:[,\s]+[A-Z][\w'-]*)?\s*(?:[.!,:;]+|\s[—–-])\s*", re.I)
+
+
+def strip_greeting(text: str) -> str:
+    s = str(text or "")
+    m = GREETING_RE.match(s)
+    if not m or not s[m.end():].strip():
+        return s
+    rest = s[m.end():]
+    return rest[:1].upper() + rest[1:]
+
+
+def task_voice(raw: str) -> str:
+    """The spoken copy of a task result: plain text, without an opening greeting."""
+    return strip_greeting(plain_for_voice(raw))
+
+
+def call_context_text(turns, request, location=""):
+    """What Hermes gets for a task delegated from a call: the call's newest CALL_CONTEXT_TURNS turns (within
+    CALL_CONTEXT_CHARS), an approximate-location line when the app shared one, then the request. `turns` are
+    {"role": "user"|"assistant", "text"}, oldest first; a final user turn that only repeats the request is left out."""
+    turns = [t for t in turns if str(t.get("text") or "").strip()]
+    if turns and turns[-1]["role"] == "user" and voice_norm(turns[-1]["text"]) == voice_norm(request):
+        turns = turns[:-1]
+    earlier, total = [], 0
+    for t in reversed(turns[-CALL_CONTEXT_TURNS:]):
+        line = ("User: " if t["role"] == "user" else "Assistant: ") + str(t["text"]).strip()
+        if total + len(line) > CALL_CONTEXT_CHARS:
+            break
+        earlier.append(line); total += len(line)
+    if not earlier and not location:
+        return request
+    head = ("Earlier in this call (voice transcript):\n" + "\n".join(reversed(earlier)) + "\n\n") if earlier else ""
+    return head + (location + "\n\n" if location else "") + "The request to handle now: " + request
 
 
 def is_filler(t: str) -> bool:
@@ -1168,7 +1220,7 @@ class DirectSession:
             else:
                 try:
                     raw = await self.ask_hermes(text, job)
-                    job["markdown"], job["answer"] = raw, plain_for_voice(raw)
+                    job["markdown"], job["answer"] = raw, task_voice(raw)
                     job["status"] = "done"
                 except Exception as exc:
                     log.warning("hermes task failed: %s", type(exc).__name__)
@@ -1215,6 +1267,7 @@ class DirectSession:
         except sqlite3.Error as exc:
             log.info("task message not created: %s", type(exc).__name__)     # the chat was deleted meanwhile
             return False
+        store.touch(cid, kind="live")
         conv = store.get_conversation(cid)
         job = TaskJob(store, conv, asst, self.task_context(text), self, jid, request, on_done).start()
         LIVE_TASKS.add(job.task)
@@ -1340,6 +1393,7 @@ OPENAI_INIT_SECONDS = 15       # a WebRTC session bills 15 s while it initialize
 TRANSCRIPT_SETTLE_S = 1.0      # after session.delegation.created, wait for the request's trailing transcript deltas
 CALL_TURNS_MAX = 400           # transcript turns kept per call
 CALL_CONTEXT_CHARS = 3000      # earlier call transcript sent with a delegated task
+CALL_CONTEXT_TURNS = 10        # at most this many of the call's newest turns go with a delegated task
 OPENAI_SEGMENT_GAP_MS = 1200   # a pause this long between same-speaker transcript deltas separates two sentences
 REFLECTED_AUDIO = ('"session.input_audio.append"', '"session.output_audio.delta"')   # sideband audio copies: ignored
 
@@ -1629,17 +1683,8 @@ class OpenAISession(DirectSession):
         if at is None:
             return "", ""
         request = self.turns[at]["text"].strip()[:MAX_MESSAGE_CHARS]
-        earlier, total = [], 0
-        for t in reversed(self.turns[:at]):
-            line = ("User: " if t["role"] == "user" else "Assistant: ") + t["text"].strip()
-            if total + len(line) > CALL_CONTEXT_CHARS:
-                break
-            earlier.append(line); total += len(line)
         self.cutoff = at + 1
-        if not earlier:
-            return request, request
-        return request, ("Earlier in this call (voice transcript):\n" + "\n".join(reversed(earlier)) +
-                         "\n\nThe request to handle now: " + request)
+        return request, call_context_text(self.turns[:at], request)
 
     async def send(self, obj):
         if self.ws is None or self.ws.closed:
@@ -1939,8 +1984,8 @@ async def api_session(req):
         log.error("live start failed: %s (%s, %s)", type(exc).__name__, code, backend)
         await ds.close()
         return response
-    if conv_id and CHAT["store"] is not None:
-        CHAT["store"].touch(conv_id, kind="live")
+    # The linked chat is not touched here: a call that ends without a word must not turn it into a voice chat or move
+    # it up the list. It changes when the call leaves something in it (a task message, the saved transcript).
     log.info("live session started (%s)%s", backend, " (linked to a chat)" if conv_id else "")
     timing = dict(getattr(ds, "timing", {}) or {}, session_ms=round((time.monotonic() - t_req) * 1000))
     log.info("live connect timing: %s", json.dumps(timing, sort_keys=True))
@@ -1973,9 +2018,20 @@ async def api_delegate(req):
         return jerr(400, "no such session or empty task", "bad_task")
     if not CFG["hermes_key"]:
         return jerr(503, "hermes not configured", "hermes_unconfigured")
+    context = body.get("context")
+    if context is not None and (not isinstance(context, list) or len(context) > 50 or not all(
+            isinstance(t, dict) and t.get("role") in ("user", "assistant") and isinstance(t.get("text"), str) for t in context)):
+        return jerr(400, "context must be a list of {role: user|assistant, text}", "bad_context")
+    if body.get("location") is not None and not isinstance(body.get("location"), dict):
+        return jerr(400, "bad_request", message="location must be an object")
     if sum(1 for j in ds.jobs.values() if j["status"] == "running") >= CFG["max_jobs"] or len(LIVE_TASKS) >= 2 * CFG["max_jobs"]:
         return jerr(429, "busy")
-    return web.json_response({"job": ds.start_job(text)})
+    # The voice model hands over only its task text (often just the user's last sentence), so the call so far goes
+    # with it: the app's newest transcript turns, each cut to 2000 characters (call_context_text keeps the last 10).
+    turns = [{"role": t["role"], "text": t["text"][:2000]} for t in (context or [])]
+    where = await location_note(body.get("location")) if body.get("location") is not None else ""
+    full = call_context_text(turns, text, where)
+    return web.json_response({"job": ds.start_job(full, request=text if full != text else None)})
 
 
 async def api_job(req):
@@ -2349,8 +2405,13 @@ class ChatStore:
         return conv or self.create_conversation(title, "hermes")
 
     def touch(self, cid, kind=None):
+        """Bumps `updated`. kind="live" also marks a voice chat, but only one whose messages all came from calls
+        (`voice`/`task`): a call started from a typed chat leaves it a text chat (its voice turns show their own
+        marker). Callers pass it only once a call left something in the chat, never when a call merely starts."""
         if kind:
-            cur = self.db.execute("UPDATE conversations SET updated = ?, kind = ? WHERE id = ? AND kind <> ?", (now_ms(), kind, cid, kind))
+            cur = self.db.execute("UPDATE conversations SET updated = ?, kind = ? WHERE id = ? AND kind <> ? AND NOT EXISTS "
+                                  "(SELECT 1 FROM messages WHERE conversation_id = ? AND source NOT IN ('voice', 'task'))",
+                                  (now_ms(), kind, cid, kind, cid))
             if cur.rowcount:
                 self._changed("conversation.updated", conversation_id=cid, changes=["kind"], conversation=self.get_conversation(cid))
             else:
@@ -6606,7 +6667,7 @@ class TaskJob(ChatJob):
     def after_end(self, status):
         raw, live = "".join(self.parts).strip(), self.live
         done = status == "complete"
-        live.update(status="done" if done else "failed", markdown=raw if done else "", answer=plain_for_voice(raw) if done else "",
+        live.update(status="done" if done else "failed", markdown=raw if done else "", answer=task_voice(raw) if done else "",
                     usage=None, t_end=time.monotonic(), stopped=status == "cancelled")
         live.pop("partial", None)
         live.pop("status_event", None)
