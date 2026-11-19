@@ -1,0 +1,10 @@
+name: places
+version: "0.1.0"
+description: Local places search through your Tove bridge (open data: Overture Maps Places and OpenStreetMap, no API key). Returns real businesses near a
+  location with phone, website, opening hours and a stable place id the Tove app turns into place cards and a map.
+author: Tove contributors
+kind: standalone
+platforms:
+  - linux
+provides_tools:
+  - places_search

@@ -37,11 +37,12 @@ class ShippedPromptTest(unittest.TestCase):
         self.assertIn("| --- | --- |", md)
         self.assertIn("entity:", md)
 
-    def test_v2_is_smaller_than_v1(self):
-        v1 = len(shipped("hermes-ui-prompt.md")) + len(shipped("openui-prompt.md"))
+    def test_v2_stays_within_budget(self):
+        # 18 Nov: 14,553 characters. 19 Nov: answer playbooks and the Places/Map/Quiz components, budgeted at about
+        # +1,500 tokens (~6,000 characters); keep the whole v2 prompt under 21,000 characters.
         v2 = len(shipped("markdown-prompt.md")) + len(shipped("openui-chat-prompt.md"))
-        self.assertLess(v2, v1 * 0.9, (v1, v2))                      # 18 Nov: 17,005 → 14,553 characters
-        self.assertLess(len(shipped("openui-chat-prompt.md")), 12000)
+        self.assertLess(v2, 21000, v2)
+        self.assertLess(len(shipped("openui-chat-prompt.md")), 14000)
 
     def test_example_is_valid(self):
         bridge.CFG.update(openui_chat_prompt_file=str(HERE / "openui-chat-prompt.md"))

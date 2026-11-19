@@ -14,7 +14,7 @@ Hermes, history, attachments, push and link previews.
 
 Everything the bridge says about itself is metadata only: transcripts and audio are never logged.
 """
-import asyncio, base64, collections, contextlib, contextvars, datetime, fractions, hashlib, hmac, html, html.parser, ipaddress, json, logging, os, re, secrets, shutil, signal, \
+import asyncio, base64, collections, contextlib, contextvars, datetime, fractions, hashlib, hmac, html, html.parser, ipaddress, json, logging, math, os, re, secrets, shutil, signal, \
     socket, sqlite3, time, urllib.parse, zipfile
 from pathlib import Path
 
@@ -171,6 +171,23 @@ def load_config(env=None) -> dict:
         "stt_max_s": num("STT_MAX_SECONDS", 120, 5),                         # longest clip per request
         "stt_concurrent": num("STT_MAX_CONCURRENT", 3, 1),
         "stt_timeout_s": num("STT_TIMEOUT_SECONDS", 45, 5),
+        # Places (API.md "Places"): open data, no keys. PLACES_DB is the Overture extract places_fetch.py writes
+        # (default <data>/places.sqlite; without it places_search reports "unavailable" and Hermes uses web search).
+        # "near <area>" goes to a Photon (default) or Nominatim /search endpoint; result details come from OSM through
+        # Overpass (OVERPASS_DAILY requests a day at most). "off" turns either service off.
+        "places_db": os.path.expanduser(text("PLACES_DB", os.path.join(data, "places.sqlite"))),
+        "places_geocoder_url": text("PLACES_GEOCODER_URL", "https://photon.komoot.io/api/"),
+        "overpass_url": text("OVERPASS_URL", "https://overpass-api.de/api/interpreter"),
+        "overpass_daily": num("OVERPASS_DAILY", 500, 0),
+        "places_cache_h": num("PLACES_CACHE_HOURS", 24, 1),
+        "tools_key": text("TOVE_TOOLS_KEY"),                                 # Hermes plugins -> /api/places/search
+        # Map tiles for the app's Map component; "" hides the map. Use your own tile server for heavy use: the
+        # OpenStreetMap Foundation's tiles are for light use only (operations.osmfoundation.org/policies/tiles/).
+        "map_tiles": "" if text("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png").lower() == "off"
+                     else text("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        "map_attribution": text("MAP_TILE_ATTRIBUTION"),
+        # Reverse geocoding of the app's approximate location (a label when the app sends only coordinates); "off".
+        "geocoder_url": text("LOCATION_GEOCODER_URL", "https://nominatim.openstreetmap.org/reverse"),
     }
 
 
@@ -2451,11 +2468,16 @@ class ChatStore:
                 continue
             msg = self._msg(r)
             text = r["text"][:per_message]
+            try:
+                loc = json.loads(r["meta_json"] or "{}").get("_location")      # bridge-private: never in the API
+            except (ValueError, AttributeError):
+                loc = None
             if r["source"] == "task":
                 text = "[Result of a task Hermes ran during a live voice call]\n" + text
             if total + len(text) > chars and out:
                 break
-            out.append({"role": "user" if r["role"] == "user" else "assistant", "content": text, "_msg": msg})
+            out.append({"role": "user" if r["role"] == "user" else "assistant", "content": text, "_msg": msg,
+                        "_location": loc if isinstance(loc, str) else None})
             total += len(text)
             if len(out) >= n:
                 break
@@ -2480,6 +2502,8 @@ class ChatStore:
                 web = web_last
             if web_note and web and m["role"] == "user":
                 add_note(msg, web_note)
+            if m["role"] == "user" and m.get("_location"):
+                add_note(msg, m["_location"])
             result.append(msg)
         return result
 
@@ -3387,6 +3411,7 @@ async def api_capabilities(req):
         "ui_prompt_versions": [v for v in (1, 2) if ui_prompt(v) and (v == 1 or ui_prompt(v) != ui_prompt(1))],
         "link_preview": CFG["link_preview"], "link_preview_images": CFG["link_preview"], "favicon": CFG["link_preview"],
         "entity_info": CFG["link_preview"],
+        "places": places_capability(), "location": True,
         "image_proxy": {"max_mb": IMAGE_PROXY_MAX // MIB, "widths": list(IMAGE_PROXY_WIDTHS),
                         "types": sorted(LINK_IMAGE_TYPES)} if CFG["link_preview"] else False,
         "tool_parts": True, "job_progress": True, "live_warm": lb["active"] == "codex",
@@ -6709,6 +6734,8 @@ async def api_chat(req):
     effort = body.get("effort")
     if effort is not None and effort not in EFFORTS:
         return jerr(400, "bad_effort", message="effort must be instant, medium or high")
+    if body.get("location") is not None and not isinstance(body.get("location"), dict):
+        return jerr(400, "bad_request", message="location must be an object")
     client_msg_id = body.get("client_msg_id")
     if client_msg_id is not None and not valid_id(client_msg_id):
         return jerr(400, "bad_client_msg_id", message="client_msg_id must be 1-64 characters of A-Z a-z 0-9 _ -")
@@ -6748,7 +6775,8 @@ async def api_chat(req):
         web_search = user_msg["meta"].get("web_search") is True if web_search is None else web_search
     else:
         meta = {k: v for k, v in (("effort", effort), ("web_search", True if web_search else None),
-                                  ("attachments", [upload_public(r) for r in att_rows] or None)) if v}
+                                  ("attachments", [upload_public(r) for r in att_rows] or None),
+                                  ("_location", await location_note(body.get("location")))) if v}
         try:
             user_msg = store.add_message(conv["id"], "user", text, "text", client_id=client_msg_id, meta=meta or None)
         except sqlite3.IntegrityError:
@@ -7027,6 +7055,592 @@ async def api_transcribe(req):
     return web.json_response({"text": text, "duration_s": round(seconds, 2), "model": CFG["stt_model"]})
 
 
+# ----------------------------------------------------------------------------------------------------------------
+# Places (API.md "Places"): open data, no API keys. Hermes' places_search tool (hermes-places/ plugin) is answered
+# from a local SQLite extract of Overture Maps Places (places_fetch.py: names, categories, addresses, phones,
+# websites, socials, confidence, position). "near <area>" is geocoded with Photon (komoot) or any Photon/Nominatim
+# compatible endpoint, cached. The few results shown are enriched from OpenStreetMap through the Overpass API
+# (opening hours, phone, website, wheelchair access, a photo tag), politely: one request at a time, at least a second
+# apart, a daily cap, results cached for a week. There are no ratings: the model takes ratings from listing pages it
+# finds on the web and names their source.
+# ----------------------------------------------------------------------------------------------------------------
+PLACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+PLACES_MAX_DEFAULT, PLACES_MAX = 5, 10
+PLACES_RADIUS_DEFAULT, PLACES_RADIUS_MAX = 5000, 50000
+PLACES = {"search": collections.OrderedDict(), "osm": collections.OrderedDict(), "geo": collections.OrderedDict()}
+PLACES_CACHE_MAX = 2000
+PLACES_UA = "ToveBridge/1.0 (self-hosted chat app; places)"
+OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+OSM_ATTRIBUTION = "© OpenStreetMap contributors"
+PLACES_ATTRIBUTION = "Places: Overture Maps Foundation · OpenStreetMap contributors"
+OSM_CACHE_S = 7 * 86400
+PLACES_THROTTLE = {}                                  # service -> {"lock", "last"}
+PLACES_STOP = {"a", "an", "the", "near", "me", "my", "in", "at", "for", "of", "and", "or", "to", "best", "good", "top",
+               "nearby", "around", "here", "open", "now", "find", "cheap", "great", "nice", "place", "places", "some",
+               "with", "where", "can", "i", "get", "really", "tonight", "today", "quiet", "suggest", "recommend"}
+# Words people use -> the words Overture's names and categories use (prefix terms, OR-ed with the word itself).
+PLACES_SYNONYMS = {
+    "dentist": ["dental"], "physio": ["physical", "physiotherap"], "physiotherapist": ["physical", "physiotherap"],
+    "psychiatrist": ["psychiatr", "mental"], "psychologist": ["psycholog", "mental"], "adhd": ["psychiatr", "psycholog", "mental"],
+    "therapist": ["psycholog", "counsel"], "counsellor": ["counsel"], "doctor": ["clinic", "doctor"],
+    "eye": ["ophthalm", "optic", "eye"], "kids": ["pediatr", "child"], "paediatrician": ["pediatr"],
+    "vet": ["veterinar"], "gym": ["gym", "fitness"], "cafe": ["cafe", "coffee"], "coffee": ["cafe", "coffee"],
+    "hotel": ["hotel", "lodg"], "veg": ["vegetarian"], "atm": ["atm", "bank"], "chemist": ["pharmac"],
+    "pharmacy": ["pharmac"], "hospital": ["hospital"], "salon": ["salon", "beauty", "hair"],
+}
+
+
+class PlacesError(Exception):
+    """A places failure with a stable code: unavailable, bad_request, not_found, upstream."""
+
+
+def places_db_path():
+    return CFG.get("places_db") or os.path.join(CFG["data_dir"], "places.sqlite")
+
+
+def places_enabled():
+    return os.path.isfile(places_db_path())
+
+
+def _place_text(v, limit=200):
+    return re.sub(r"\s+", " ", v).strip()[:limit] if isinstance(v, str) else ""
+
+
+def _http_url(v):
+    v = _place_text(v, 500)
+    try:
+        u = urllib.parse.urlsplit(v)
+    except ValueError:
+        return None
+    return v if u.scheme in ("http", "https") and u.hostname and not u.username else None
+
+
+def places_meta():
+    """The extract's meta table (release, bbox, count, attribution), or {}."""
+    try:
+        db = sqlite3.connect("file:%s?mode=ro" % urllib.parse.quote(places_db_path()), uri=True)
+        try:
+            return {k: json.loads(v) for k, v in db.execute("SELECT key, value FROM meta")}
+        finally:
+            db.close()
+    except (sqlite3.Error, ValueError):
+        return {}
+
+
+def places_terms(query):
+    """FTS5 query over names and categories: each meaningful word as a prefix term, plus its synonyms."""
+    words = [w for w in re.findall(r"[^\W_]+", query.lower()) if w not in PLACES_STOP and len(w) > 1][:6]
+    terms = []
+    for w in words:
+        for t in [w] + PLACES_SYNONYMS.get(w, []):
+            stem = t[:-3] if len(t) >= 8 else t[:-1] if len(t) >= 6 else t      # dentist -> dent*, clinics -> clinic*
+            if stem not in terms:
+                terms.append(stem)
+    return "{name cats} : (%s)" % " OR ".join('"%s"*' % t.replace('"', "") for t in terms) if terms else ""
+
+
+def haversine_km(lat1, lng1, lat2, lng2):
+    p = math.pi / 180
+    a = 0.5 - math.cos((lat2 - lat1) * p) / 2 + math.cos(lat1 * p) * math.cos(lat2 * p) * (1 - math.cos((lng2 - lng1) * p)) / 2
+    return 12742 * math.asin(math.sqrt(max(0.0, a)))
+
+
+def places_query_db(path, query, point, radius_m, n):
+    """Ranked rows from the extract: text relevance, then confidence and distance. Widens the radius (up to 4x) when
+    fewer than n match nearby."""
+    match = places_terms(query)
+    if not match:
+        raise PlacesError("bad_request")
+    db = sqlite3.connect("file:%s?mode=ro" % urllib.parse.quote(path), uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        for factor in (1, 2, 4):
+            sql = ("SELECT p.*, bm25(places_fts, 4.0, 6.0, 0.5) AS rank FROM places_fts JOIN places p ON p.rowid = places_fts.rowid "
+                   "WHERE places_fts MATCH ?")
+            args = [match]
+            if point:
+                r = radius_m * factor
+                dlat = r / 111320.0
+                dlng = r / (111320.0 * max(0.2, math.cos(math.radians(point[0]))))
+                sql += " AND p.lat BETWEEN ? AND ? AND p.lng BETWEEN ? AND ?"
+                args += [point[0] - dlat, point[0] + dlat, point[1] - dlng, point[1] + dlng]
+            rows = db.execute(sql + " ORDER BY rank LIMIT 400", args).fetchall()
+            if len(rows) >= n or not point:
+                break
+    except sqlite3.OperationalError as exc:
+        log.warning("places: query failed (%s)", exc)
+        raise PlacesError("unavailable")
+    finally:
+        db.close()
+    if not rows:
+        return []
+    best = min(r["rank"] for r in rows) or -1.0
+    scored, seen = [], set()
+    for r in rows:
+        dist = haversine_km(point[0], point[1], r["lat"], r["lng"]) if point else None
+        rel = r["rank"] / best if best else 0.0                                 # 1.0 = the best text match
+        near = 1.0 - min(1.0, (dist or 0) * 1000 / (radius_m * 4)) if point else 0.5
+        score = 0.55 * rel + 0.25 * (r["confidence"] or 0) + 0.2 * near
+        key = (r["name"].lower(), round(r["lat"], 3), round(r["lng"], 3))
+        if key in seen:
+            continue
+        seen.add(key)
+        scored.append((score, dist, dict(r)))
+    scored.sort(key=lambda x: -x[0])
+    return [(dist, row) for _, dist, row in scored[:n]]
+
+
+def place_compact(row, dist=None, osm=None):
+    """One extract row (+ its OSM tags) -> the compact shape the model and the app see."""
+    osm = osm or {}
+    category = _place_text((row.get("category") or row.get("basic") or "").replace("_", " "), 60).capitalize()
+    socials = []
+    try:
+        socials = [s for s in json.loads(row.get("socials") or "[]") if _http_url(s)][:2]
+    except ValueError:
+        pass
+    hours = _place_text(osm.get("opening_hours"), 120) or None
+    photo = _http_url(osm.get("image"))
+    commons = _place_text(osm.get("wikimedia_commons"), 200)
+    if not photo and commons.startswith("File:"):
+        photo = "https://commons.wikimedia.org/wiki/Special:FilePath/" + urllib.parse.quote(commons[5:].replace(" ", "_"))
+    out = {
+        "id": "place:" + row["id"], "name": _place_text(row["name"], 120),
+        "category": category or None,
+        "subtitle": " · ".join(x for x in (category, _place_area(row)) if x),
+        "address": ", ".join(x for x in (_place_text(row.get("address"), 160), _place_text(row.get("locality"), 60)) if x) or None,
+        "lat": row["lat"], "lng": row["lng"],
+        "distance_km": round(dist, 1) if dist is not None else None,
+        "phone": _place_text(osm.get("phone") or osm.get("contact:phone") or row.get("phone"), 40).split(";")[0].strip() or None,
+        "website": _http_url(row.get("website")) or _http_url(osm.get("website") or osm.get("contact:website")),
+        "socials": socials or None,
+        "hours": hours, "open_now": opening_hours_open(hours) if hours else None,
+        "wheelchair": osm.get("wheelchair") if osm.get("wheelchair") in ("yes", "no", "limited") else None,
+        "photo": photo,
+        "confidence": round(row.get("confidence") or 0, 2),
+        "sources": "Overture Maps" + (" + OpenStreetMap" if osm else ""),
+    }
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _place_area(row):
+    """A short "where": the street part of the address (Overture's locality is usually just the city)."""
+    parts = [p.strip() for p in (row.get("address") or "").split(",") if p.strip() and not re.fullmatch(r"[\d\s/-]+", p.strip())]
+    street = next((p for p in parts if not re.match(r"^(no\.?|#|door|flat|plot)\b", p, re.I)), parts[0] if parts else "")
+    return _place_text(street, 40) or _place_text(row.get("locality"), 40)
+
+
+_OH_DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+
+def opening_hours_open(spec, now=None):
+    """True/False for common OSM opening_hours ("24/7", "Mo-Fr 09:00-18:00; Sa 10:00-14:00; Su off"), at the bridge's
+    local time; None for anything this small parser does not understand (holidays, months, sunrise…)."""
+    now = now or datetime.datetime.now()
+    spec = spec.strip()
+    if spec == "24/7":
+        return True
+    today, minute = _OH_DAYS[now.weekday()], now.hour * 60 + now.minute
+    state = None
+    for rule in [r.strip() for r in spec.split(";") if r.strip()]:
+        m = re.fullmatch(r"((?:(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?,?)+)?\s*(.+)", rule)
+        if not m:
+            return None
+        days, times = m.group(1), m.group(2).strip()
+        if days:
+            covered = set()
+            for part in days.strip(",").split(","):
+                a, _, b = part.partition("-")
+                i, j = _OH_DAYS.index(a), _OH_DAYS.index(b or a)
+                covered.update(_OH_DAYS[k % 7] for k in range(i, j + 1 if j >= i else j + 8))
+            if today not in covered:
+                continue
+        if times in ("off", "closed"):
+            state = False
+            continue
+        spans = re.findall(r"(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})", times)
+        if not spans or re.sub(r"[\d:,\s+-]", "", times):
+            return None
+        state = False
+        for h1, m1, h2, m2 in spans:
+            a, b = int(h1) * 60 + int(m1), int(h2) * 60 + int(m2)
+            if (a <= minute < b) if b > a else (minute >= a or minute < b):
+                state = True
+    return state
+
+
+async def places_throttled(service, spacing=1.0):
+    """One request at a time per service, at least `spacing` seconds apart (Nominatim's and Overpass's policies)."""
+    t = PLACES_THROTTLE.setdefault(service, {"lock": asyncio.Lock(), "last": 0.0})
+    await t["lock"].acquire()
+    wait = spacing - (time.monotonic() - t["last"])
+    if wait > 0:
+        await asyncio.sleep(wait)
+    return t
+
+
+def places_release(t):
+    t["last"] = time.monotonic()
+    t["lock"].release()
+
+
+async def places_http_json(service, url, params=None, data=None, timeout=8):
+    t = await places_throttled(service)
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False) as s:
+            req = s.post(url, data=data, headers={"User-Agent": PLACES_UA}) if data is not None else \
+                s.get(url, params=params, headers={"User-Agent": PLACES_UA, "Accept-Language": "en"})
+            async with req as r:
+                if r.status != 200:
+                    raise PlacesError("upstream")
+                return await r.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
+        log.info("places: %s failed (%s)", service, type(exc).__name__)
+        raise PlacesError("upstream")
+    finally:
+        places_release(t)
+
+
+def _cache_get(cache, key, ttl):
+    hit = cache.get(key)
+    if hit and hit[0] + ttl > time.time():
+        cache.move_to_end(key)
+        return hit[1]
+    return None
+
+
+def _cache_put(cache, key, value):
+    cache[key] = (time.time(), value)
+    cache.move_to_end(key)
+    while len(cache) > PLACES_CACHE_MAX:
+        cache.popitem(last=False)
+
+
+def parse_near(near):
+    """`near` as ((lat, lng), "") when it is "lat,lng", else (None, text)."""
+    near = _place_text(near, 160)
+    m = re.fullmatch(r"\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*", near or "")
+    if m:
+        lat, lng = float(m.group(1)), float(m.group(2))
+        if -90 <= lat <= 90 and -180 <= lng <= 180:
+            return (lat, lng), ""
+    return None, near
+
+
+async def geocode_area(text):
+    """(lat, lng) of an area name through the configured geocoder (Photon by default; a Nominatim /search URL works
+    too), cached for 30 days; None when off, unknown or failing."""
+    url = CFG["places_geocoder_url"]
+    key = text.lower()
+    if not url or url.lower() == "off" or not key:
+        return None
+    hit = _cache_get(PLACES["geo"], key, 30 * 86400)
+    if hit is not None:
+        return tuple(hit) if hit else None
+    nominatim = "nominatim" in url or url.rstrip("/").endswith("/search")
+    params = {"q": text, "format": "jsonv2", "limit": "1"} if nominatim else {"q": text, "limit": "1"}
+    try:
+        data = await places_http_json("geocoder", url, params=params, timeout=6)
+    except PlacesError:
+        return None
+    point = None
+    try:
+        if nominatim and isinstance(data, list) and data:
+            point = (float(data[0]["lat"]), float(data[0]["lon"]))
+        elif isinstance(data, dict) and data.get("features"):
+            lng, lat = data["features"][0]["geometry"]["coordinates"][:2]
+            point = (float(lat), float(lng))
+    except (KeyError, TypeError, ValueError, IndexError):
+        point = None
+    _cache_put(PLACES["geo"], key, list(point) if point else [])
+    return point
+
+
+def _place_norm(s):
+    return " ".join(re.findall(r"[^\W_]+", (s or "").lower()))
+
+
+def _overpass_regex(name):
+    first = _place_norm(name).split(" ")[:2]
+    return "".join("\\\\" + c if c in ".^$*+?()[]{}|\\" else c for c in " ".join(first))[:40]
+
+
+def osm_match(row, elements):
+    """The OSM element within about 150 m whose name best matches the row's, or None."""
+    want = set(_place_norm(row["name"]).split())
+    best, best_score = None, 0.0
+    for el in elements:
+        tags = el.get("tags") or {}
+        lat = el.get("lat") or (el.get("center") or {}).get("lat")
+        lng = el.get("lon") or (el.get("center") or {}).get("lon")
+        if lat is None or lng is None or haversine_km(row["lat"], row["lng"], lat, lng) > 0.15:
+            continue
+        have = set(_place_norm(tags.get("name")).split())
+        score = len(want & have) / max(1, len(want | have))
+        if score > best_score:
+            best, best_score = tags, score
+    return best if best_score >= 0.5 else None
+
+
+OSM_STATE = {"down_until": 0.0, "tasks": set()}
+OSM_WAIT_S = 2.5                 # how long a search waits for OSM details before answering without them
+OSM_BACKOFF_S = 300              # after a failed Overpass request, none for this long (busy public servers)
+
+
+async def osm_enrich(rows, wait=None):
+    """{place id: OSM tags} for the rows: cached details, plus one Overpass request for the rest that may run for at most
+    `wait` seconds here; a slower request finishes in the background and fills the cache (for /api/places/info and
+    later searches). Best effort: Overpass's public servers are often at capacity."""
+    out = {}
+    for _, row in rows:
+        hit = _cache_get(PLACES["osm"], row["id"], OSM_CACHE_S)
+        if hit:
+            out[row["id"]] = hit
+    task = asyncio.ensure_future(osm_fetch(rows))
+    OSM_STATE["tasks"].add(task)
+    task.add_done_callback(OSM_STATE["tasks"].discard)
+    try:
+        fresh = await asyncio.wait_for(asyncio.shield(task), OSM_WAIT_S if wait is None else wait)
+    except asyncio.TimeoutError:
+        return out
+    return {**out, **fresh}
+
+
+async def osm_fetch(rows):
+    """One Overpass request for the rows without cached details; {place id: tags} of the matches."""
+    out = {}
+    todo = [row for _, row in rows if _cache_get(PLACES["osm"], row["id"], OSM_CACHE_S) is None]
+    url = CFG["overpass_url"]
+    if (not todo or not url or url.lower() == "off" or places_daily_left("overpass") <= 0
+            or time.monotonic() < OSM_STATE["down_until"]):
+        return out
+    parts = ['nwr(around:150,%.6f,%.6f)["name"~"%s",i];' % (r["lat"], r["lng"], _overpass_regex(r["name"]))
+             for r in todo if _overpass_regex(r["name"])]
+    if not parts:
+        return out
+    query = "[out:json][timeout:8];(%s);out tags center 200;" % "".join(parts)
+    places_daily_take("overpass")
+    try:
+        data = await places_http_json("overpass", url, data={"data": query}, timeout=12)
+    except PlacesError:
+        OSM_STATE["down_until"] = time.monotonic() + OSM_BACKOFF_S
+        return out                                     # not cached: a later search may try again
+    elements = data.get("elements") if isinstance(data, dict) else None
+    keep = ("opening_hours", "phone", "contact:phone", "website", "contact:website", "wheelchair", "image", "wikimedia_commons")
+    for row in todo:
+        tags = osm_match(row, elements or [])
+        tags = {k: v for k, v in (tags or {}).items() if k in keep and isinstance(v, str)}
+        _cache_put(PLACES["osm"], row["id"], tags)
+        if tags:
+            out[row["id"]] = tags
+    return out
+
+
+def places_usage_file():
+    return os.path.join(CFG["data_dir"], "places-usage.json")
+
+
+def places_daily_left(kind):
+    try:
+        usage = json.loads(Path(places_usage_file()).read_text())
+    except (OSError, ValueError):
+        usage = {}
+    return max(0, CFG["overpass_daily"] - usage.get(time.strftime("%Y-%m-%d"), {}).get(kind, 0))
+
+
+def places_daily_take(kind):
+    path, today = places_usage_file(), time.strftime("%Y-%m-%d")
+    try:
+        usage = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        usage = {}
+    day = usage.get(today, {})
+    usage = {today: {**day, kind: day.get(kind, 0) + 1}}
+    os.makedirs(CFG["data_dir"], mode=0o700, exist_ok=True)
+    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(usage, f)
+    os.replace(path + ".tmp", path)
+
+
+async def places_search(query, near=None, radius_m=None, max_results=None):
+    """{"query", "near", "places": [compact…]} from the local extract, enriched from OSM; cached by its arguments."""
+    if not places_enabled():
+        raise PlacesError("unavailable")
+    query = _place_text(query, 200)
+    if not query:
+        raise PlacesError("bad_request")
+    try:
+        n = max(1, min(PLACES_MAX, int(max_results or PLACES_MAX_DEFAULT)))
+        radius = max(500, min(PLACES_RADIUS_MAX, int(radius_m or PLACES_RADIUS_DEFAULT)))
+    except (TypeError, ValueError):
+        raise PlacesError("bad_request")
+    point, near_text = parse_near(near)
+    if near_text:
+        point = await geocode_area(near_text)
+    key = json.dumps([query.lower(), [round(x, 3) for x in point] if point else near_text, radius, n])
+    hit = _cache_get(PLACES["search"], key, CFG["places_cache_h"] * 3600)
+    if hit is not None:
+        return {**hit, "cached": True}
+    rows = await asyncio.get_running_loop().run_in_executor(None, places_query_db, places_db_path(), query, point, radius, n)
+    osm = await osm_enrich(rows)
+    places = [place_compact(row, dist, osm.get(row["id"])) for dist, row in rows]
+    out = {"query": query, "near": near or None, "located": bool(point), "places": places, "attribution": PLACES_ATTRIBUTION}
+    if near_text and not point:
+        out["warning"] = "could not find %r on the map; results are not limited to that area" % near_text
+    _cache_put(PLACES["search"], key, out)
+    log.info("places: search returned %d (%d with OSM details)", len(places), len(osm))
+    return {**out, "cached": False}
+
+
+def place_row(pid):
+    """One extract row by its "place:<id>", or None."""
+    if not valid_place_ref(pid) or not places_enabled():
+        return None
+    db = sqlite3.connect("file:%s?mode=ro" % urllib.parse.quote(places_db_path()), uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        r = db.execute("SELECT * FROM places WHERE id = ?", (pid[6:],)).fetchone()
+        return dict(r) if r else None
+    except sqlite3.Error:
+        return None
+    finally:
+        db.close()
+
+
+def valid_place_ref(pid):
+    return isinstance(pid, str) and pid.startswith("place:") and bool(PLACE_ID_RE.match(pid[6:]))
+
+
+def places_error(exc):
+    code = str(exc) or "upstream"
+    status = {"unavailable": 503, "bad_request": 400, "not_found": 404}.get(code, 502)
+    message = {"unavailable": "this server has no places database (run places_fetch.py)",
+               "bad_request": "invalid places request", "not_found": "no such place"}.get(code, "places search failed")
+    return jerr(status, code, message=message)
+
+
+def tools_authorized(req):
+    """Hermes' tools (the places_search plugin) use TOVE_TOOLS_KEY; the app's key works too."""
+    given = req.headers.get("Authorization", "")
+    given = given[7:] if given.lower().startswith("bearer ") else ""
+    key = CFG.get("tools_key") or ""
+    return (len(key) >= 24 and hmac.compare_digest(given.encode(), key.encode())) or live_authorized(req)
+
+
+async def api_places_search(req):
+    """POST /api/places/search {query, near?, radius_m?, max?} -> compact places (API.md "Places")."""
+    if not tools_authorized(req):
+        return jerr(401, "unauthorized")
+    body, bad = await read_json(req)
+    if bad:
+        return bad
+    try:
+        out = await places_search(body.get("query"), body.get("near"), body.get("radius_m"), body.get("max"))
+    except PlacesError as exc:
+        return places_error(exc)
+    return web.json_response(out)
+
+
+async def api_places_info(req):
+    """GET /api/places/info?id=place:… -> one place (the app's cards and map pins), with OSM details when cached."""
+    if not live_authorized(req):
+        return jerr(401, "unauthorized")
+    pid = req.query.get("id", "")
+    if not valid_place_ref(pid):
+        return places_error(PlacesError("bad_request"))
+    row = await asyncio.get_running_loop().run_in_executor(None, place_row, pid)
+    if row is None:
+        return places_error(PlacesError("not_found" if places_enabled() else "unavailable"))
+    osm = _cache_get(PLACES["osm"], row["id"], OSM_CACHE_S) or None
+    return web.json_response(place_compact(row, None, osm), headers={"Cache-Control": "private, max-age=3600"})
+
+
+def places_capability():
+    tiles = CFG["map_tiles"]
+    meta = places_meta() if places_enabled() else {}
+    return {"search": bool(meta), "attribution": PLACES_ATTRIBUTION if meta else None,
+            "release": meta.get("release"), "count": meta.get("count"), "bbox": meta.get("bbox"),
+            "map_tiles": tiles or None,
+            "map_attribution": CFG["map_attribution"] or (OSM_ATTRIBUTION if tiles == OSM_TILES else None)}
+
+
+# ---- approximate location (API.md "Location"): the app may send {"location": {"lat", "lng", "label"?}} with a chat
+# turn. Coordinates are rounded to 2 decimals (about 1 km) before anything else sees them; a missing label comes from
+# a reverse geocoder (OpenStreetMap Nominatim by default, cached, at most one request a second as its policy asks).
+# Only the resulting one-line note is kept, on that user message (bridge-private meta), so later turns send the same
+# history and Hermes' session stays stable.
+GEO_CACHE = collections.OrderedDict()
+GEO_LOCK = {"lock": None, "last": 0.0}
+GEO_UA = "ToveBridge/1.0 (self-hosted chat app; coarse reverse geocoding)"
+LOCATION_LABEL_MAX = 80
+
+
+def coarse_location(value):
+    """(lat, lng, label) rounded to about 1 km, or None for anything malformed."""
+    if not isinstance(value, dict):
+        return None
+    lat, lng = value.get("lat"), value.get("lng")
+    label = _place_text(value.get("label"), LOCATION_LABEL_MAX) if isinstance(value.get("label"), str) else ""
+    label = re.sub(r"[\[\]{}<>`]", "", label)
+    if isinstance(lat, bool) or isinstance(lng, bool) or not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+        return (None, None, label) if label else None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return round(float(lat), 2), round(float(lng), 2), label
+
+
+async def reverse_geocode(lat, lng):
+    """"Neighbourhood, City, CC" for rounded coordinates, or "" (geocoder off or failing)."""
+    url = CFG["geocoder_url"]
+    if not url or url.lower() == "off":
+        return ""
+    key = "%.2f,%.2f" % (lat, lng)
+    if key in GEO_CACHE:
+        GEO_CACHE.move_to_end(key)
+        return GEO_CACHE[key]
+    GEO_LOCK["lock"] = GEO_LOCK["lock"] or asyncio.Lock()
+    label = ""
+    async with GEO_LOCK["lock"]:
+        if key in GEO_CACHE:
+            return GEO_CACHE[key]
+        wait = 1.0 - (time.monotonic() - GEO_LOCK["last"])
+        if wait > 0:
+            await asyncio.sleep(wait)
+        GEO_LOCK["last"] = time.monotonic()
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=4), trust_env=False) as s:
+                async with s.get(url, params={"format": "jsonv2", "lat": key.split(",")[0], "lon": key.split(",")[1],
+                                              "zoom": "14", "addressdetails": "1"},
+                                 headers={"User-Agent": GEO_UA, "Accept-Language": "en"}) as r:
+                    data = await r.json(content_type=None) if r.status == 200 else {}
+            a = data.get("address") if isinstance(data, dict) and isinstance(data.get("address"), dict) else {}
+            parts = [a.get(k) for k in ("suburb", "neighbourhood", "city_district", "village", "town")]
+            place = next((p for p in parts if isinstance(p, str) and p), "")
+            city = next((a.get(k) for k in ("city", "town", "county", "state_district", "state") if isinstance(a.get(k), str) and a.get(k)), "")
+            cc = a.get("country_code", "").upper() if isinstance(a.get("country_code"), str) else ""
+            label = ", ".join(dict.fromkeys(x for x in (place, city, cc) if x))[:LOCATION_LABEL_MAX]
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
+            log.info("reverse geocode failed: %s", type(exc).__name__)
+            return ""
+        GEO_CACHE[key] = label
+        while len(GEO_CACHE) > 1024:
+            GEO_CACHE.popitem(last=False)
+    return label
+
+
+async def location_note(value):
+    """The context line for one chat turn, or "" when there is no usable location."""
+    loc = coarse_location(value)
+    if not loc:
+        return ""
+    lat, lng, label = loc
+    if not label and lat is not None:
+        label = await reverse_geocode(lat, lng)
+    where = "; ".join(x for x in (label, "about %.2f, %.2f" % (lat, lng) if lat is not None else "") if x)
+    return "[User's approximate location, shared by the app for this message: %s. Use it for anything local instead of asking.]" % where
+
+
 @web.middleware
 async def origin_middleware(req, handler):
     """`X-Device-Id` (the app's per-install id) marks the events this request causes with `origin` (API.md "Events")."""
@@ -7059,6 +7673,7 @@ def make_app():
                     web.get("/api/uploads/{uid}/preview", api_upload_preview), web.delete("/api/uploads/{uid}", api_upload_delete),
                     web.get("/api/link-preview", api_link_preview), web.get("/api/favicon", api_favicon),
                     web.get("/api/image", api_image), web.get("/api/entity/info", api_entity_info),
+                    web.post("/api/places/search", api_places_search), web.get("/api/places/info", api_places_info),
                     web.get("/api/settings", api_settings_get), web.put("/api/settings", api_settings_put),
                     web.get("/api/suggestions", api_suggestions), web.get("/api/usage/limits", api_usage_limits), web.post("/api/transcribe", api_transcribe),
                     web.post("/api/push/register", api_push_register), web.post("/api/notify", api_notify),
@@ -7079,7 +7694,8 @@ def make_app():
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    for name, value in (("BRIDGE_API_KEY", CFG["key"]), ("LIVE_PAGE_KEY", CFG["live_key"]), ("TOVE_NOTIFY_KEY", CFG["notify_key"])):
+    for name, value in (("BRIDGE_API_KEY", CFG["key"]), ("LIVE_PAGE_KEY", CFG["live_key"]), ("TOVE_NOTIFY_KEY", CFG["notify_key"]),
+                        ("TOVE_TOOLS_KEY", CFG["tools_key"])):
         if value and len(value) < 24:
             raise SystemExit("%s must be at least 24 characters (or unset)" % name)
     if not CFG["key"] and not CFG["live_key"]:

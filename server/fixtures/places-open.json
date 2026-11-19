@@ -1,0 +1,42 @@
+{
+  "_about": "Shapes recorded on 19 November 2026 from the open places stack, then replaced with neutral sample data (invented names, numbers, ids and positions near 13.03,80.27). overture: rows as places_fetch.py's DuckDB query returns them (Overture Maps Places 2026-11-18.0). overpass: an Overpass API JSON answer. photon: a Photon /api answer.",
+  "overture": [
+    {"id": "11111111-aaaa-4bbb-8ccc-000000000001", "name": "Sample Mind Clinic", "category": "psychiatry",
+     "basic": "behavioral_or_mental_health_clinic", "hierarchy": ["health_care", "doctor", "psychiatry"], "alternates": ["psychology"],
+     "brand": null, "address": "12 Example Street", "locality": "Mylapore", "region": "TN", "postcode": "600004", "country": "IN",
+     "phones": ["+910000000001"], "websites": ["https://clinic.example/adhd"], "socials": ["https://www.facebook.com/sample1"],
+     "confidence": 0.92, "lat": 13.0339, "lng": 80.2686},
+    {"id": "11111111-aaaa-4bbb-8ccc-000000000002", "name": "Example Neuro Centre", "category": "psychology",
+     "basic": "behavioral_or_mental_health_clinic", "hierarchy": ["health_care", "psychology"], "alternates": null,
+     "brand": null, "address": "4 Sample Road", "locality": "Adyar", "region": "TN", "postcode": "600020", "country": "IN",
+     "phones": ["+910000000002"], "websites": null, "socials": null, "confidence": 0.81, "lat": 13.0012, "lng": 80.2565},
+    {"id": "11111111-aaaa-4bbb-8ccc-000000000003", "name": "Placeholder Dental Care", "category": "general_dentistry",
+     "basic": "dental_clinic", "hierarchy": ["health_care", "dentist"], "alternates": null,
+     "brand": null, "address": "7 Test Lane", "locality": "Mylapore", "region": "TN", "postcode": "600004", "country": "IN",
+     "phones": ["+910000000003"], "websites": ["http://dental.example/"], "socials": null, "confidence": 0.97, "lat": 13.0351, "lng": 80.2702},
+    {"id": "11111111-aaaa-4bbb-8ccc-000000000004", "name": "Far Away Psychiatry", "category": "psychiatry",
+     "basic": "behavioral_or_mental_health_clinic", "hierarchy": null, "alternates": null, "brand": null,
+     "address": "1 Remote Road", "locality": "Elsewhere", "region": "TN", "postcode": null, "country": "IN",
+     "phones": null, "websites": null, "socials": null, "confidence": 0.95, "lat": 12.80, "lng": 80.05},
+    {"id": "11111111-aaaa-4bbb-8ccc-000000000005", "name": "Demo Biryani House", "category": "indian_restaurant",
+     "basic": "restaurant", "hierarchy": ["food_and_drink", "restaurant", "indian_restaurant"], "alternates": null, "brand": null,
+     "address": "9 Mock Street", "locality": "Mylapore", "region": "TN", "postcode": null, "country": "IN",
+     "phones": ["+910000000005"], "websites": null, "socials": null, "confidence": 0.88, "lat": 13.0330, "lng": 80.2670},
+    {"id": "bad", "name": "Dropped: no position", "category": "cafe", "lat": null, "lng": null}
+  ],
+  "overpass": {
+    "version": 0.6, "generator": "Overpass API",
+    "elements": [
+      {"type": "node", "id": 1001, "lat": 13.03392, "lon": 80.26858,
+       "tags": {"name": "Sample Mind Clinic", "opening_hours": "Mo-Sa 09:00-20:00; Su off", "wheelchair": "yes",
+                "image": "https://images.example/clinic.jpg", "healthcare": "clinic"}},
+      {"type": "way", "id": 2002, "center": {"lat": 13.0352, "lon": 80.2703},
+       "tags": {"name": "Placeholder Dental", "opening_hours": "24/7", "wikimedia_commons": "File:Sample dental building.jpg"}},
+      {"type": "node", "id": 3003, "lat": 13.10, "lon": 80.30, "tags": {"name": "Example Neuro Centre"}}
+    ]
+  },
+  "photon": {"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {"name": "Mylapore", "osm_value": "suburb", "countrycode": "IN"},
+     "geometry": {"type": "Point", "coordinates": [80.2690, 13.0335]}}
+  ]}
+}
