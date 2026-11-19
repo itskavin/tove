@@ -22,6 +22,7 @@ import '../interactive/ui_slider.dart';
 import '../interactive/ui_widgets.dart';
 import '../markdown/artifact.dart' show ArtifactCard;
 import '../markdown/hermes_markdown.dart';
+import '../markdown/place_info.dart' show isPlaceRef;
 import '../shell/drawer_swipe.dart' show DrawerSwipeExclusion;
 import '../theme/tokens.dart';
 import 'charts.dart';
@@ -30,6 +31,8 @@ import 'lang/builtins.dart' show jsString, toNumber, truthy;
 import 'lang/evaluator.dart';
 import 'lang/parser.dart';
 import 'library.dart';
+import 'places_view.dart';
+import 'quiz_view.dart';
 
 part 'chat_renderer.dart';
 
@@ -81,6 +84,15 @@ class _OpenUiBlockState extends State<OpenUiBlock> {
 
   /// Required fields left empty on the last submit, per form.
   final Map<String, Set<String>> _errors = {};
+
+  /// The selected place, shared by this block's Places cards and Map.
+  final OuiPlaceSelection placeSelection = OuiPlaceSelection();
+
+  @override
+  void dispose() {
+    placeSelection.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -1360,7 +1372,9 @@ class _OuiTabsState extends State<_OuiTabs> {
             children: [
               for (var j = 0; j < n && j < 8; j++)
                 UiPill(
-                  label: widget.labels[j].isEmpty ? 'Part ${j + 1}' : widget.labels[j],
+                  label: widget.labels[j].isEmpty
+                      ? 'Part ${j + 1}'
+                      : widget.labels[j],
                   style: widget.style,
                   quiet: true,
                   selected: j == i,

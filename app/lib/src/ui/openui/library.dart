@@ -779,6 +779,74 @@ const List<OuiComponent> toveComponents = [
     OuiProp('unit', 'string'),
     OuiProp('variant', 'string', values: _variants),
   ]),
+  OuiComponent(
+    'Places',
+    'Tove',
+    'Local places as cards with Call, Directions and Website; a tap selects '
+        'its Map pin.',
+    [OuiProp('items', 'Place[]', required: true)],
+  ),
+  OuiComponent(
+    'Place',
+    'Tove',
+    'id = "place:…" copied from places_search (the app loads phone, '
+        'website, hours, position), or "" for a place found on the web (then '
+        'give phone and url). facts: one short line (price, credentials, '
+        'specialty). rating only with its ratingSource, e.g. "4.8 · 120 '
+        'reviews", "Practo".',
+    [
+      OuiProp('id', 'string', required: true),
+      OuiProp('name', 'text', required: true),
+      OuiProp('subtitle', 'text'),
+      OuiProp('facts', 'text'),
+      OuiProp('rating', 'text'),
+      OuiProp('ratingSource', 'text'),
+      OuiProp('phone', 'string'),
+      OuiProp('url', 'string'),
+    ],
+  ),
+  OuiComponent(
+    'Map',
+    'Tove',
+    'Pins for the same Place refs as the Places list (or Pins); taps sync '
+        'with the cards.',
+    [
+      OuiProp('items', 'Node[]', required: true, promptType: '(Place|Pin)[]'),
+      OuiProp('zoom', 'number'),
+    ],
+  ),
+  OuiComponent('Pin', 'Tove', '', [
+    OuiProp('label', 'text', required: true),
+    OuiProp('lat', 'number', required: true),
+    OuiProp('lng', 'number', required: true),
+  ]),
+  OuiComponent(
+    'Quiz',
+    'Tove',
+    'One question at a time with big answer buttons, progress and Back; '
+        'answers stay on the phone until the end, then ONE message sends '
+        'them all. source: the instrument or textbook; note: e.g. '
+        '"Screening, not a diagnosis."',
+    [
+      OuiProp('title', 'text', required: true),
+      OuiProp('questions', 'Question[]', required: true),
+      OuiProp('source', 'text'),
+      OuiProp('note', 'text'),
+    ],
+  ),
+  OuiComponent(
+    'Question',
+    'Tove',
+    'answer: index (from 0) of the correct option, for practice quizzes; '
+        'the app shows right or wrong and explain. Screenings have none.',
+    [
+      OuiProp('text', 'text', required: true),
+      OuiProp('options', 'string[]', required: true),
+      OuiProp('answer', 'number'),
+      OuiProp('explain', 'text'),
+      OuiProp('scores', 'number[]'),
+    ],
+  ),
   // ── Parsed for tolerance, not taught: OpenUI's base-library Stack.
   OuiComponent('Stack', 'Layout', '', [
     OuiProp('children', 'Node[]', required: true),
@@ -816,6 +884,7 @@ const Set<String> _untaught = {
 
 /// Trailing optional props the prompt leaves out (they still parse).
 const Map<String, Set<String>> _untaughtProps = {
+  'Question': {'scores'},
   'Card': {'sources'},
   'Callout': {'visible'},
   'BarChart': {'xLabel', 'yLabel', 'height'},
@@ -1061,9 +1130,11 @@ String toveOpenUiPrompt() {
       '(EntityList for time and servings, ingredients, Steps for the '
       'method); server, homelab or service status (Status, Services, '
       'Gauges, Callout per problem); lists of people, places or products '
-      'with pictures; plans, routines and to-do lists (Checklist); every '
-      'email, message or letter the user will send (Email); whole programs, '
-      'configs and long drafts (Artifact); choices the user taps. Facts, '
+      'with pictures; local places (Places, then a Map); screenings, '
+      'quizzes and practice questions (Quiz); plans, routines and to-do lists '
+      '(Checklist); every email, message or letter the user will send '
+      '(Email); whole programs, configs and long drafts (Artifact); next '
+      'steps and choices the user taps (Buttons). Facts, '
       'explanations, chat, short lists and code snippets stay markdown. '
       'Never wrap a plain paragraph in openui and never repeat its content '
       'in prose.',

@@ -21,6 +21,7 @@ import 'entity_info.dart';
 import 'favicons.dart';
 import 'links.dart';
 import 'markdown_style.dart';
+import 'place_info.dart';
 import 'source_pill.dart';
 
 /// Image bytes the bridge returned for one URL.
@@ -104,7 +105,8 @@ class BridgeImageLoader
         MarkdownImageLoader,
         FaviconSource,
         EntityInfoSource,
-        PageImageSource {
+        PageImageSource,
+        PlaceInfoSource {
   BridgeImageLoader({
     required Uri baseUrl,
     required String accessKey,
@@ -403,6 +405,63 @@ class BridgeImageLoader
     }
     return info;
   }
+
+  // ------------------------------------------------------------ places
+
+  final _places = <String, PlaceInfo?>{}; // insertion order = LRU
+  final _placesPending = <String, Future<PlaceInfo?>>{};
+  Future<MapTiles?>? _tiles;
+
+  @override
+  PlaceInfo? peekPlace(String id) => _places[id];
+
+  @override
+  Future<PlaceInfo?> placeInfo(String id) {
+    if (!isPlaceRef(id)) return SynchronousFuture(null);
+    if (_places.containsKey(id)) return SynchronousFuture(_places[id]);
+    return _placesPending[id] ??= () async {
+      final r = await _get('/api/places/info', {'id': id});
+      if (r == null) return null; // offline: ask again later
+      if (r.statusCode == 502 || r.statusCode == 429) return null;
+      PlaceInfo? info;
+      if (r.statusCode == 200) {
+        try {
+          info = PlaceInfo.fromJson(jsonDecode(utf8.decode(r.bodyBytes)));
+        } on FormatException {
+          info = null;
+        }
+      }
+      _places[id] = info;
+      while (_places.length > 256) {
+        _places.remove(_places.keys.first);
+      }
+      return info;
+    }().whenComplete(() {
+      _placesPending.remove(id);
+    });
+  }
+
+  /// From `GET /api/capabilities` (`places.map_tiles`), asked once.
+  @override
+  Future<MapTiles?> mapTiles() => _tiles ??= () async {
+    final r = await _get('/api/capabilities', const {});
+    if (r == null) {
+      _tiles = null; // offline: ask again next time
+      return null;
+    }
+    try {
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      final p = j is Map ? j['places'] : null;
+      final url = p is Map ? p['map_tiles'] : null;
+      final attr = p is Map ? p['map_attribution'] : null;
+      if (url is String && url.startsWith('https://') && url.contains('{z}')) {
+        return MapTiles(url, attr is String ? attr : '');
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
+  }();
 
   // ------------------------------------------------------------ page images
 

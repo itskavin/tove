@@ -166,6 +166,79 @@ String openUiPlainText(String source) {
           );
           return;
         }
+        String? str(Object? x) {
+          if (x is! String && x is! num) return null;
+          final t = jsString(x).trim();
+          return t.isEmpty ? null : t;
+        }
+
+        List<ElementNode> kids(Object? x, String t) => [
+          if (x is List)
+            for (final i in x)
+              if (i is ElementNode && i.typeName == t) i,
+        ];
+        String placeLine(ElementNode p, int n) {
+          final q = p.props;
+          final rating = str(q['rating']), src = str(q['ratingSource']);
+          return [
+            '$n. ${str(q['name']) ?? ''}',
+            ?str(q['subtitle']),
+            ?str(q['facts']),
+            if (rating != null && src != null) 'rated $rating on $src',
+            if (str(q['phone']) case final ph?) 'phone $ph',
+          ].join(', ');
+        }
+
+        if (type == 'Places' || type == 'Place') {
+          final items = type == 'Place' ? [v] : kids(v.props['items'], 'Place');
+          for (final (i, p) in items.indexed) {
+            lines.add(placeLine(p, i + 1));
+          }
+          return;
+        }
+        if (type == 'Map') {
+          final names = [
+            for (final x
+                in (v.props['items'] is List
+                    ? v.props['items']! as List
+                    : const []))
+              if (x is ElementNode) ?str(x.props['name'] ?? x.props['label']),
+          ];
+          if (names.isNotEmpty) {
+            lines.add(
+              'Map of ${names.length} '
+              '${names.length == 1 ? 'place' : 'places'}: ${names.join(', ')}',
+            );
+          }
+          return;
+        }
+        if (type == 'Quiz' || type == 'Question') {
+          final qs = type == 'Question'
+              ? [v]
+              : kids(v.props['questions'], 'Question');
+          if (type == 'Quiz') {
+            lines.add(
+              'Quiz: ${str(v.props['title']) ?? 'Quiz'}, ${qs.length} '
+              '${qs.length == 1 ? 'question' : 'questions'}.',
+            );
+          }
+          for (final (i, q) in qs.indexed) {
+            final opts =
+                (q.props['options'] is List
+                        ? q.props['options']! as List
+                        : const [])
+                    .map(jsString)
+                    .join(', ');
+            lines.add('${i + 1}. ${str(q.props['text']) ?? ''} ($opts)');
+          }
+          if (type == 'Quiz') {
+            if (str(v.props['note']) case final n?) lines.add(n);
+            if (str(v.props['source']) case final src?) {
+              lines.add('Source: $src');
+            }
+          }
+          return;
+        }
         if (!legacy && type == 'Table') {
           final cols = [
             for (final c

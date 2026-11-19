@@ -5,7 +5,9 @@ import '../common/floating_sheet.dart';
 import '../tokens.dart';
 
 /// Links open in the external browser after a confirm sheet that shows the
-/// host (spec §5.2). Only http, https and mailto links are opened.
+/// host (spec §5.2). Only http, https and mailto links are opened, plus
+/// `tel:` (opens the dialer with the number; nothing is called) and `geo:`
+/// (the user's maps app) from place cards.
 typedef LinkOpener = Future<bool> Function(Uri uri);
 
 Future<bool> _launch(Uri uri) =>
@@ -21,11 +23,22 @@ Uri? safeLink(String href) {
     return u.host.isEmpty ? null : u;
   }
   if (u.scheme == 'mailto') return u;
+  if (u.scheme == 'tel' && RegExp(r'^\+?[\d-]{5,20}$').hasMatch(u.path)) {
+    return u;
+  }
+  if (u.scheme == 'geo' &&
+      RegExp(r'^-?\d{1,2}(\.\d+)?,-?\d{1,3}(\.\d+)?$').hasMatch(u.path)) {
+    return u;
+  }
   return null;
 }
 
 String linkHost(Uri u) {
-  if (u.scheme == 'mailto') return u.path;
+  if (u.scheme == 'mailto' || u.scheme == 'tel') return u.path;
+  if (u.scheme == 'geo') {
+    final m = RegExp(r'\(([^)]*)\)$').firstMatch(Uri.decodeComponent(u.query));
+    return m?[1] ?? u.path;
+  }
   final h = u.host;
   return h.startsWith('www.') ? h.substring(4) : h;
 }
@@ -36,7 +49,11 @@ Future<void> confirmAndOpen(BuildContext context, String href) async {
   final ok = await showFloatingSheet<bool>(
     context,
     page: SheetPage(
-      title: 'Open link?',
+      title: switch (uri.scheme) {
+        'tel' => 'Call this number?',
+        'geo' => 'Open in Maps?',
+        _ => 'Open link?',
+      },
       builder: (context) {
         final t = HermesTokens.of(context);
         return Padding(
@@ -47,17 +64,23 @@ Future<void> confirmAndOpen(BuildContext context, String href) async {
             children: [
               Text(linkHost(uri), textAlign: TextAlign.center, style: t.title),
               const SizedBox(height: 6),
-              Text(
-                uri.toString(),
-                textAlign: TextAlign.center,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: t.label.copyWith(fontWeight: FontWeight.w400),
-              ),
+              if (uri.scheme != 'tel' && uri.scheme != 'geo')
+                Text(
+                  uri.toString(),
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.label.copyWith(fontWeight: FontWeight.w400),
+                ),
               const SizedBox(height: 20),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Open in browser'),
+                child: Text(switch (uri.scheme) {
+                  'tel' => 'Open dialer',
+                  'geo' => 'Open Maps',
+                  'mailto' => 'Open email app',
+                  _ => 'Open in browser',
+                }),
               ),
               const SizedBox(height: 8),
               TextButton(

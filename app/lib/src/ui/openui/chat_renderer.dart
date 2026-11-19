@@ -581,6 +581,52 @@ class _ChatRenderer extends _RendererBase {
             ],
           ),
         );
+      case 'Places' || 'Place':
+        final items = e.typeName == 'Place'
+            ? [e]
+            : _els(p['items'], 'Place').take(10).toList();
+        final places = [for (final x in items) ?_ouiPlace(x)];
+        if (places.isEmpty) return const SizedBox.shrink();
+        return OuiPlacesView(
+          items: places,
+          selection: state.placeSelection,
+          style: s,
+        );
+      case 'Map':
+        final places = [
+          for (final x in _els(p['items']).take(20)) ?_ouiPlace(x),
+        ];
+        if (places.isEmpty) return const SizedBox.shrink();
+        final zoom = p['zoom'] is num ? toNumber(p['zoom']).clamp(3, 18) : null;
+        return OuiMapView(
+          items: places,
+          selection: state.placeSelection,
+          style: s,
+          zoom: zoom?.toDouble(),
+        );
+      case 'Pin':
+        return const SizedBox.shrink(); // only inside a Map
+      case 'Quiz' || 'Question':
+        final questions = [
+          for (final x
+              in (e.typeName == 'Question'
+                      ? [e]
+                      : _els(p['questions'], 'Question'))
+                  .take(40))
+            ?_ouiQuestion(x),
+        ];
+        if (questions.isEmpty) return const SizedBox.shrink();
+        final sid = e.statementId ?? 'q$_count';
+        return Builder(
+          builder: (context) => OuiQuizView(
+            id: 'oui${UiBlockOrdinal.of(context)}.$sid',
+            title: _str(p['title']) ?? 'Quiz',
+            questions: questions,
+            source: _str(p['source']),
+            note: _str(p['note']),
+            style: s,
+          ),
+        );
       case 'Status':
         return UiElementView(
           style: s,
@@ -633,6 +679,50 @@ class _ChatRenderer extends _RendererBase {
         );
     }
     return const SizedBox.shrink();
+  }
+
+  OuiPlace? _ouiPlace(ElementNode x) {
+    final q = x.props;
+    if (x.typeName == 'Pin') {
+      final lat = q['lat'], lng = q['lng'];
+      final label = _str(q['label']);
+      if (label == null || lat is! num || lng is! num) return null;
+      if (lat.abs() > 90 || lng.abs() > 180) return null;
+      return OuiPlace(
+        ref: '',
+        name: label,
+        lat: lat.toDouble(),
+        lng: lng.toDouble(),
+      );
+    }
+    if (x.typeName != 'Place') return null;
+    final name = _str(q['name']);
+    if (name == null) return null;
+    final ref = _str(q['id']) ?? '';
+    return OuiPlace(
+      ref: isPlaceRef(ref) ? ref : '',
+      name: name,
+      subtitle: _str(q['subtitle']),
+      facts: _str(q['facts']),
+      rating: _str(q['rating']),
+      ratingSource: _str(q['ratingSource']),
+      phone: _str(q['phone']),
+      url: _isHttps(_str(q['url'])) ? _str(q['url']) : null,
+    );
+  }
+
+  OuiQuestion? _ouiQuestion(ElementNode x) {
+    final text = _str(x.props['text']);
+    final options = _strs(x.props['options']).take(8).toList();
+    if (text == null || options.length < 2) return null;
+    final a = x.props['answer'];
+    final answer = a is num && a >= 0 && a < options.length ? a.toInt() : null;
+    return OuiQuestion(
+      text: text,
+      options: options,
+      answer: answer,
+      explain: _str(x.props['explain']),
+    );
   }
 
   // ── Root card and sources

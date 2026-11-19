@@ -96,8 +96,9 @@ void main() {
       for (final c in toveComponents) {
         expect(p.contains('\n${c.name}('), isTaught(c), reason: c.name);
       }
-      // ~4 characters per token: about 3k tokens.
-      expect(p.length, lessThan(12000));
+      // ~4 characters per token: about 3.2k tokens (19 Nov: Places, Map and
+      // Quiz added; the bridge test keeps the whole v2 prompt in budget).
+      expect(p.length, lessThan(14000));
       for (final legacy in ['hermes-ui', 'hermes-html', 'hermes-artifact']) {
         expect(p, isNot(contains(legacy)));
       }
