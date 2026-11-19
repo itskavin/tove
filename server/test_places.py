@@ -119,7 +119,9 @@ class PlacesTest(unittest.IsolatedAsyncioTestCase):
     async def test_area_names_are_geocoded_and_cached(self):
         status, out = await self.search({"query": "biryani", "near": "Mylapore, Chennai"})
         self.assertEqual((status, out["located"], out["places"][0]["name"]), (200, True, "Demo Biryani House"))
-        self.assertEqual(self.osm.photon[0], {"q": "Mylapore, Chennai", "limit": "1"})
+        self.assertEqual(self.osm.photon[0], {"q": "Mylapore, Chennai", "limit": "5"})
+        # The area itself (a place feature), not the business ranked above it.
+        self.assertEqual(await bridge.geocode_area("Mylapore, Chennai"), (13.0335, 80.2690))
         await self.search({"query": "biryani restaurant", "near": "mylapore, chennai"})
         self.assertEqual(len(self.osm.photon), 1)
         status, out = await self.search({"query": "biryani", "near": "Nowhere at all"})

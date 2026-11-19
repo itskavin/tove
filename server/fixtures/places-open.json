@@ -36,7 +36,9 @@
     ]
   },
   "photon": {"type": "FeatureCollection", "features": [
-    {"type": "Feature", "properties": {"name": "Mylapore", "osm_value": "suburb", "countrycode": "IN"},
+    {"type": "Feature", "properties": {"name": "Sample Consulting Office", "osm_key": "office", "osm_value": "company", "countrycode": "IN"},
+     "geometry": {"type": "Point", "coordinates": [80.2100, 12.9500]}},
+    {"type": "Feature", "properties": {"name": "Mylapore", "osm_key": "place", "osm_value": "suburb", "countrycode": "IN"},
      "geometry": {"type": "Point", "coordinates": [80.2690, 13.0335]}}
   ]}
 }

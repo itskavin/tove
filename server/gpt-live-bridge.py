@@ -7338,7 +7338,9 @@ async def geocode_area(text):
     if hit is not None:
         return tuple(hit) if hit else None
     nominatim = "nominatim" in url or url.rstrip("/").endswith("/search")
-    params = {"q": text, "format": "jsonv2", "limit": "1"} if nominatim else {"q": text, "limit": "1"}
+    # Photon ranks a business that has the area in its address ("… Company, Adyar") above the area itself, so ask for
+    # a few hits and take the first that is a place or boundary (suburb, town, district…), else the first hit.
+    params = {"q": text, "format": "jsonv2", "limit": "1"} if nominatim else {"q": text, "limit": "5"}
     try:
         data = await places_http_json("geocoder", url, params=params, timeout=6)
     except PlacesError:
@@ -7348,7 +7350,9 @@ async def geocode_area(text):
         if nominatim and isinstance(data, list) and data:
             point = (float(data[0]["lat"]), float(data[0]["lon"]))
         elif isinstance(data, dict) and data.get("features"):
-            lng, lat = data["features"][0]["geometry"]["coordinates"][:2]
+            feats = data["features"]
+            area = [f for f in feats if ((f.get("properties") or {}).get("osm_key") in ("place", "boundary"))]
+            lng, lat = (area or feats)[0]["geometry"]["coordinates"][:2]
             point = (float(lat), float(lng))
     except (KeyError, TypeError, ValueError, IndexError):
         point = None
