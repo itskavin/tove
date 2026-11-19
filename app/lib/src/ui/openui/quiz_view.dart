@@ -150,7 +150,10 @@ class _OuiQuizViewState extends State<OuiQuizView> {
     final h = UiActionHandler.of(context);
     h.selectionHaptic();
     final picks = {..._picks, q: o};
-    setState(() => _local = picks);
+    setState(() {
+      _local = picks;
+      _page = q; // stay here: practice shows feedback, others advance below
+    });
     _save(picks);
     _advance?.cancel();
     if (qs[q].answer != null) return; // practice: read the feedback first
@@ -198,7 +201,9 @@ class _OuiQuizViewState extends State<OuiQuizView> {
             ? 'Question ${cur + 1} of $n, $pct percent complete'
             : 'All $n answered',
         excludeSemantics: true,
-        child: Row(
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 12,
           children: [
             Text(
               cur < n ? 'Question ${cur + 1} of $n' : 'All $n answered',
@@ -207,7 +212,6 @@ class _OuiQuizViewState extends State<OuiQuizView> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const Spacer(),
             Text(
               '$pct% complete',
               style: s.caption.copyWith(color: s.textMuted),

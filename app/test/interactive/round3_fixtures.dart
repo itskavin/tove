@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:tove_chat/src/chat/chat.dart';
 import 'package:tove_chat/src/ui/markdown/favicons.dart';
 import 'package:tove_chat/src/ui/markdown/hermes_markdown.dart';
+import 'package:tove_chat/src/ui/markdown/place_info.dart';
 import 'package:tove_chat/src/ui/theme/motion.dart';
 import 'package:tove_chat/src/ui/theme/render_policy.dart';
 import 'package:tove_chat/src/ui/theme/theme.dart';
@@ -101,7 +102,8 @@ Uint8List _png(int w, int h, int seed, {bool round = false}) {
 
 /// Pictures and favicons from memory, like the bridge loader with its
 /// cache already warm.
-class FakeBridgeImages implements MarkdownImageLoader, FaviconSource {
+class FakeBridgeImages
+    implements MarkdownImageLoader, FaviconSource, PlaceInfoSource {
   FakeBridgeImages({this.favicons = true});
 
   final bool favicons;
@@ -132,7 +134,61 @@ class FakeBridgeImages implements MarkdownImageLoader, FaviconSource {
   @override
   Future<LinkImageResult> loadFavicon(String host) =>
       SynchronousFuture(peekFavicon(host)!);
+
+  /// Places the bridge "knows" (neutral sample data, see [samplePlaces]).
+  @override
+  PlaceInfo? peekPlace(String id) => samplePlaces[id];
+
+  @override
+  Future<PlaceInfo?> placeInfo(String id) =>
+      SynchronousFuture(samplePlaces[id]);
+
+  /// No tiles in tests: the map draws its plain grid.
+  @override
+  Future<MapTiles?> mapTiles() => SynchronousFuture(null);
 }
+
+/// Neutral sample places for place cards and maps (invented names, numbers
+/// and positions).
+const samplePlaces = {
+  'place:sample-clinic-0001': PlaceInfo(
+    id: 'place:sample-clinic-0001',
+    name: 'Sample Mind Clinic',
+    category: 'Psychiatry',
+    subtitle: 'Psychiatry · Example Street',
+    lat: 13.0339,
+    lng: 80.2686,
+    distanceKm: 0.4,
+    phone: '+91 00000 00001',
+    website: 'https://clinic.example/adhd',
+    hours: 'Mo-Sa 09:00-20:00; Su off',
+    openNow: true,
+    photo: 'https://images.example/clinic.jpg',
+  ),
+  'place:sample-centre-0002': PlaceInfo(
+    id: 'place:sample-centre-0002',
+    name: 'Example Neuro Centre',
+    category: 'Psychology',
+    subtitle: 'Psychology · Sample Road',
+    lat: 13.0212,
+    lng: 80.2565,
+    distanceKm: 2.1,
+    phone: '+91 00000 00002',
+  ),
+  'place:sample-health-0003': PlaceInfo(
+    id: 'place:sample-health-0003',
+    name: 'Placeholder Health Hospital',
+    category: 'Hospital',
+    subtitle: 'Hospital · Test Lane',
+    lat: 13.0420,
+    lng: 80.2490,
+    distanceKm: 1.6,
+    phone: '+91 00000 00003',
+    website: 'https://hospital.example/',
+    openNow: false,
+    hours: 'Mo-Fr 10:00-17:00',
+  ),
+};
 
 class FakeReadAloud extends ChangeNotifier implements ReadAloud {
   @override

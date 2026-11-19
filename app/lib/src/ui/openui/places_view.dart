@@ -680,6 +680,7 @@ class _Pin extends StatelessWidget {
       button: true,
       selected: selected,
       label: 'Pin $index, $name',
+      excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
