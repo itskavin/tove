@@ -162,7 +162,11 @@ check off, in Settings › About › Updates. The check asks GitHub's public API
   obfuscation rather than a hardware keystore).
 - **Model output is data, not code.** There is no WebView. Markdown, HTML-like and OpenUI replies are parsed and drawn
   with native widgets; nothing in a reply runs as code. OpenUI actions can only send a visible message, copy text,
-  change the block's own state, or open a link after a confirm sheet (http, https and mailto only).
+  change the block's own state, or open a link after a confirm sheet (http, https, mailto, and tel: or geo: from
+  place cards, which open the dialer or maps app without calling).
+- **Location is opt-in and coarse.** "Use my approximate location" is off by default. When on, each message carries
+  a position rounded to about 1 km; the bridge keeps only a one-line label with the message. Local places come from
+  open data on your own server (Overture Maps, OpenStreetMap), with no Google key. Maps load OpenStreetMap tiles.
 - **Pictures and links go through the bridge.** The bridge fetches link previews and images itself, refuses private,
   loopback and tailnet addresses, and caps size and type, so a reply cannot make your phone contact arbitrary hosts.
 - **Hermes has real tools.** Anyone with your access key can drive your Hermes Agent. Treat the key like an SSH key,

@@ -9,7 +9,6 @@ import 'dart:ui' show Tristate;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:tove_chat/src/settings/prefs_store.dart';
-import 'package:tove_chat/src/ui/interactive/checklist_store.dart';
 import 'package:tove_chat/src/ui/interactive/interactive.dart';
 import 'package:tove_chat/src/ui/markdown/links.dart';
 import 'package:tove_chat/src/ui/openui/lang/parser.dart';

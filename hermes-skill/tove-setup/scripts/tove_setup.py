@@ -5,6 +5,8 @@
     tove_setup.py install [--mode docker|venv] [--enable-hermes-api] [--dry-run]
     tove_setup.py expose --via tailscale|cloudflare|url [--url https://...] [--dry-run]
     tove_setup.py pair [--png FILE]                       QR code + short code (one use, 10 minutes)
+    tove_setup.py places --area "City, Country" | --bbox W,S,E,N | --country CC [--dry-run]
+                                                          local places for "near me" answers (open data, no key)
     tove_setup.py status | uninstall [--keep-data]
 
 Every command prints one JSON object on stdout (`--human` for the pairing QR on a terminal). Nothing is changed by
@@ -570,6 +572,55 @@ def pair(a) -> dict:
 # ---------------------------------------------------------------------------------------------------------------
 # status / uninstall
 # ---------------------------------------------------------------------------------------------------------------
+def places(a) -> dict:
+    """Extracts Overture Maps Places for an area into the bridge's data dir (places_fetch.py, DuckDB in its own
+    venv), and gives the bridge a tools key for Hermes' places_search plugin. The bridge picks the database up at
+    once. Installing the plugin into Hermes changes Hermes' plugins and .env, so the steps are returned, not run."""
+    plan = Plan(a.dry_run)
+    state = load_state()
+    if not state:
+        raise SetupError("Tove is not installed here yet: run install first.")
+    det = detect()
+    server, data = Path(state["server"]), Path(state["data_dir"])
+    venv = home() / "places-venv"
+    py = det["python"] or sys.executable
+    if not (venv / "bin" / "python").exists() or a.dry_run:
+        made = plan.run([py, "-m", "venv", str(venv)], check=False)
+        if made.returncode != 0:
+            if not det["uv"]:
+                raise SetupError("python -m venv failed (on Debian/Ubuntu: sudo apt install python3-venv)")
+            if venv.exists():
+                shutil.rmtree(venv)
+            plan.run(["uv", "venv", "-q", "-p", py, str(venv)])
+    if (venv / "bin" / "pip").exists() or plan.dry_run:
+        plan.run([venv / "bin" / "pip", "install", "-q", "--only-binary=:all:", "duckdb"], timeout=1800)
+    else:
+        plan.run(["uv", "pip", "install", "-q", "--python", venv / "bin" / "python", "duckdb"], timeout=1800)
+    where = (["--area", a.area] if a.area else ["--bbox", a.bbox] if a.bbox else ["--country", a.country])
+    plan.run([venv / "bin" / "python", server / "places_fetch.py", *where, "--out", data / "places.sqlite"], timeout=7200)
+    env_file = Path(state["env_file"])
+    env = read_env_file(env_file.read_text()) if env_file.exists() else {}
+    tools_key = env.get("TOVE_TOOLS_KEY") if len(env.get("TOVE_TOOLS_KEY", "")) >= 24 else secrets.token_urlsafe(32)
+    if env.get("TOVE_TOOLS_KEY") != tools_key:
+        if not plan.dry_run:
+            text = env_file.read_text().rstrip("\n") + "\nTOVE_TOOLS_KEY=%s\n" % tools_key
+            plan.write(env_file, text, 0o600)
+        else:
+            plan.steps.append("add TOVE_TOOLS_KEY to %s" % env_file)
+        name = state.get("name", NAME)
+        if state.get("mode") == "docker":
+            plan.steps.append("recreate the container to load TOVE_TOOLS_KEY (run install again)")
+        else:
+            plan.run(["systemctl", "--user", "restart", name])
+    bridge_url = state.get("public_url") or state.get("local_url")
+    return {"ok": True, "dry_run": a.dry_run, "database": str(data / "places.sqlite"), "steps": plan.steps,
+            "hermes_plugin": {
+                "copy": "%s → Hermes' plugins directory as places/ (container: /opt/data/plugins/places)" % (server / "hermes-places"),
+                "hermes_env": {"TOVE_BRIDGE_URL": bridge_url, "TOVE_TOOLS_KEY": "<the value in %s>" % env_file},
+                "enable": "hermes plugins enable places (as Hermes' user; new sessions get the tool)",
+                "note": "Hermes reads .env at start: adding the two lines needs a Hermes restart. Ask first."}}
+
+
 def status(_a) -> dict:
     state = load_state()
     if not state:
@@ -639,6 +690,12 @@ def main(argv=None):
     q.add_argument("--png")
     q.add_argument("--name", help="server name shown in the app (default: this host's name)")
     q.add_argument("--human", action="store_true", help="print the QR code for a terminal")
+    pl = sub.add_parser("places")
+    where = pl.add_mutually_exclusive_group(required=True)
+    where.add_argument("--area", help='a named area, e.g. "Chennai, India"')
+    where.add_argument("--bbox", help="west,south,east,north in degrees")
+    where.add_argument("--country", help="ISO country code (large; slow)")
+    pl.add_argument("--dry-run", action="store_true")
     sub.add_parser("status")
     u = sub.add_parser("uninstall")
     u.add_argument("--keep-data", action="store_true")
@@ -646,7 +703,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         out = {"detect": lambda _: public(detect()), "install": install, "expose": expose, "pair": pair,
-               "status": status, "uninstall": uninstall}[a.cmd](a)
+               "status": status, "uninstall": uninstall, "places": places}[a.cmd](a)
     except SetupError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1

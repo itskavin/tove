@@ -118,6 +118,41 @@ docker exec -u hermes <hermes container> hermes plugins enable image-search     
 It needs no key or paid service and fetches no image bytes itself; it only returns the URLs and source pages that
 SearXNG's image engines reported (watermarked stock-photo sites and tiny images are dropped).
 
+### Local places (optional)
+
+For "near me" questions Hermes gets a `places_search` tool from the bundled `hermes-places` plugin. It asks the
+bridge, which answers from a local extract of [Overture Maps Places](https://docs.overturemaps.org/guides/places/)
+(open data: CDLA-Permissive-2.0, with Foursquare data under Apache-2.0 and AllThePlaces under CC0) and adds
+OpenStreetMap details (opening hours, wheelchair access, a photo tag) through the Overpass API. There is no API key
+and no per-search service; there are no ratings either, so the prompt has Hermes take ratings from listing pages and
+name the source.
+
+1. Extract your area once (re-run every few months). It needs DuckDB, only for this script, and downloads just the
+   area's rows from Overture's public bucket (a city takes about 30 s and 50 MB; a state about 90 s and 300 MB):
+
+   ```sh
+   python3 -m venv ~/places-venv && ~/places-venv/bin/pip install duckdb
+   BRIDGE_DATA_DIR=/path/to/data ~/places-venv/bin/python places_fetch.py --area "Chennai, India"
+   # or --bbox west,south,east,north, or --country IN (large)
+   ```
+
+   The `tove-setup` skill does this with `tove_setup.py places --area "…"`. The bridge picks the file up at once.
+2. Give the bridge a tools key, `TOVE_TOOLS_KEY` (`openssl rand -base64 32`), and restart it.
+3. Install the plugin in Hermes and give it the bridge's address and that key in Hermes' `.env`, then restart Hermes
+   (`.env` is read at start):
+
+   ```sh
+   docker cp hermes-places <hermes container>:/opt/data/plugins/places   # then chown it to Hermes' user
+   # Hermes .env: TOVE_BRIDGE_URL=https://your-bridge.example  TOVE_TOOLS_KEY=<the same key>
+   docker exec -u hermes <hermes container> hermes plugins enable places
+   ```
+
+   `TOVE_BRIDGE_URL` must be reachable from where Hermes runs its tools: the bridge's HTTPS address works anywhere.
+
+The app's maps use OpenStreetMap's tiles by default, with attribution (`MAP_TILE_URL` changes them). The app's
+"Use my approximate location" setting (off by default) sends a position rounded to about 1 km; the bridge labels it
+with Nominatim (`LOCATION_GEOCODER_URL`) and keeps only that one line on the message.
+
 ## 2a. Install with Docker
 
 ```sh

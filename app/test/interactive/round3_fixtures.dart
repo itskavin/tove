@@ -222,7 +222,7 @@ Widget r3Frame(
   required Brightness brightness,
   required bool desktop,
   double textScale = 1,
-  FakeBridgeImages? images,
+  MarkdownImageLoader? images,
   List<String>? shared,
   bool sheet = false,
 }) {

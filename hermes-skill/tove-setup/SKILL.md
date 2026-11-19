@@ -44,6 +44,7 @@ nothing.
 | `install [--mode docker\|venv] [--enable-hermes-api]` | Installs and starts the bridge with a new access key |
 | `expose --via tailscale` / `--via cloudflare --download` / `--via url --url https://...` | Gives the phone an address |
 | `pair --png <file>` | One-time pairing code and QR code (one use, 10 minutes) |
+| `places --area "City, Country"` (or `--bbox W,S,E,N`, `--country CC`) | Local places for "near me" answers: open data, no key |
 | `status`, `uninstall [--keep-data]` | Check, or remove everything this skill made |
 
 ## Procedure
@@ -72,7 +73,11 @@ nothing.
    Tell them: download the latest Tove APK from the GitHub Releases page
    (https://github.com/itskavin/tove/releases) and install it, open it, tap **Scan QR code** (or **Enter code or
    address**).
-6. **Restart Hermes last**, only if step 4 returned `hermes_restart_command` and the user agreed: say you will be
+6. **Local places (offer it).** For good "near me" answers, ask which city or region the user lives in, then run
+   `places --area "<city>, <country>"` (a city takes about a minute; it installs DuckDB in its own venv). Its
+   `hermes_plugin` lists what installing the `places_search` plugin changes in Hermes (a plugin folder, two `.env`
+   lines, a restart); do it only after the user agrees, together with the restart in step 7.
+7. **Restart Hermes last**, only if step 4 returned `hermes_restart_command` and the user agreed: say you will be
    gone for a few seconds, then run it. Do this after the QR code is sent, because the restart ends this turn.
 
 ## Pitfalls

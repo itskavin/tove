@@ -488,7 +488,7 @@ class _OptionButton extends StatelessWidget {
       child: Material(
         color: fill ?? Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(26),
           side: BorderSide(
             color: color,
             width: selected || verdict != null ? 1.5 : 1,
@@ -500,26 +500,28 @@ class _OptionButton extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 52),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
+              padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 12),
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: s.body.copyWith(
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                      ),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: s.body.copyWith(
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
                   if (selected || verdict == true)
-                    Icon(
-                      verdict == false
-                          ? Icons.close_rounded
-                          : Icons.check_rounded,
-                      size: 20,
-                      color: color,
+                    Positioned(
+                      right: -32,
+                      child: Icon(
+                        verdict == false
+                            ? Icons.close_rounded
+                            : Icons.check_rounded,
+                        size: 20,
+                        color: color,
+                      ),
                     ),
                 ],
               ),

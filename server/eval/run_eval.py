@@ -21,6 +21,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import urllib.parse
 import secrets
 import shutil
 import socket
@@ -121,6 +123,17 @@ def chat(base, key, body, timeout=900):
             "conversation_id": meta.get("conversation_id")}
 
 
+def place_infos(base, key, text):
+    """/api/places/info for each place: id in a reply (for the renders); {} when none or unavailable."""
+    out = {}
+    for pid in dict.fromkeys(re.findall(r'"(place:[A-Za-z0-9_-]{8,64})"', text)):
+        try:
+            out[pid] = get_json(base + "/api/places/info?id=" + urllib.parse.quote(pid), key)
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+    return out
+
+
 def parse_location(value):
     label, _, coords = value.partition("@")
     lat, _, lng = coords.partition(",")
@@ -140,6 +153,7 @@ def main():
     ap.add_argument("--no-location", action="store_true", help="send no location (as a bridge without it)")
     ap.add_argument("--no-places", action="store_true", help="no places database for the scratch bridge")
     ap.add_argument("--places-db", default="", help="a places_fetch.py extract for the scratch bridge (PLACES_DB)")
+    ap.add_argument("--pause", type=float, default=8.0, help="seconds between cases (spares the search engines)")
     ap.add_argument("--keep-data", action="store_true")
     args = ap.parse_args()
 
@@ -160,7 +174,9 @@ def main():
                "effort": args.effort, "location": location, "places": caps.get("places"),
                "location_capability": caps.get("location"), "cases": []}
     try:
-        for case in cases:
+        for n, case in enumerate(cases):
+            if n:
+                time.sleep(args.pause)
             turns, cid = [], None
             for text in case["turns"]:
                 body = {"message": {"text": text}, "ui": args.ui, "effort": args.effort}
@@ -173,6 +189,7 @@ def main():
                 except Exception as exc:                       # keep going; the judge scores a failure as such
                     r = {"text": "", "error": {"code": type(exc).__name__}, "total_s": 0, "first_token_s": 0, "tools": []}
                 cid = r.get("conversation_id") or cid
+                r["places"] = place_infos(base, key, r.get("text") or "")
                 turns.append({"user": text, **r})
                 print("%-20s %6.1fs tools=%d chars=%d%s" % (case["id"], r["total_s"], len(r["tools"]), len(r["text"]),
                                                             " ERROR %s" % r["error"] if r.get("error") else ""), flush=True)

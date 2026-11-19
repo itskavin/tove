@@ -28,6 +28,8 @@ written with the first Tove names (root `Stack`, `Title`, `Facts`…).
 | `chat_renderer.dart` | The chat-library renderer (part of `openui_block.dart`) |
 | `charts.dart` | Native Bar/Line/Area/HorizontalBar/Radar/Pie/Radial/SingleStackedBar/Scatter charts |
 | `plain_text.dart` | Readable text for Read aloud, Share and Copy; `FollowUpBlock` items for the reply suggestions |
+| `places_view.dart` | `Places`/`Place` cards, the `Map` and `LocationButton` |
+| `quiz_view.dart` | The `Quiz` component |
 
 `lang/` is a port of `@openuidev/lang-core` (MIT, Thesys Inc.); it imports
 no Flutter. Not ported: Query/Mutation execution (no tools in the app),
@@ -63,7 +65,13 @@ Send menu), `Artifact(title, content, kind?, language?, file?)`,
 (ticks saved and synced), `Entities` + `Entity(name, subtitle?, image?,
 about?)` (Wikipedia picture, tap = details sheet), `News` + `Article`, and
 the status family `Status`, `Services` + `Service` (tap sends `ask`),
-`Gauges` + `Gauge`. Their variants use OpenUI's
+`Gauges` + `Gauge`; `Places` + `Place(id, name, subtitle?, facts?, rating?, ratingSource?, phone?, url?)`
+(cards with Call, Directions and Website; details by the `place:` id from the bridge's open places service;
+a rating shows only with its source) and `Map(items, zoom?)` + `Pin(label, lat, lng)` (flutter_map with the
+bridge's tile URL and attribution, numbered pins, selection shared with the cards; `places_view.dart`);
+`Quiz(title, questions, source?, note?)` + `Question(text, options, answer?, explain?)` (one question at a
+time with progress and Back, answers kept like checklist ticks, one message at the end; `quiz_view.dart`);
+`LocationButton(label?)` (turns on the approximate-location setting and asks again). Their variants use OpenUI's
 `"neutral"|"info"|"success"|"warning"|"danger"`.
 
 Not supported: `EditableTable` (no save path). Tolerated, not taught: the

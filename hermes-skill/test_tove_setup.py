@@ -90,6 +90,28 @@ class SetupTest(unittest.TestCase):
         self.assertIn("--network hermes_net -p 127.0.0.1:8787:8787", steps)
         self.assertEqual(out["hermes_restart_command"], "docker restart hermes")
 
+    def test_places_dry_run_plans_the_extract_and_the_plugin_steps(self):
+        home = self.root / "tove"
+        home.mkdir()
+        (home / "bridge.env").write_text("LIVE_PAGE_KEY=secret-key-that-must-not-appear-000\n")
+        state = {"mode": "venv", "name": "tove-bridge", "server": str(SERVER), "data_dir": str(home / "data"),
+                 "env_file": str(home / "bridge.env"), "public_url": "https://box.example.ts.net:8787"}
+        (home / "setup.json").write_text(json.dumps(state))
+        with mock.patch.object(ts, "detect", return_value=self.native()):
+            code, out = run("places", "--area", "Sampletown, Exampleland", "--dry-run")
+        self.assertEqual(code, 0)
+        steps = "\n".join(out["steps"])
+        for want in ("duckdb", "places_fetch.py --area 'Sampletown, Exampleland' --out", "TOVE_TOOLS_KEY",
+                     "systemctl --user restart tove-bridge"):
+            self.assertIn(want, steps)
+        self.assertEqual(out["hermes_plugin"]["hermes_env"]["TOVE_BRIDGE_URL"], "https://box.example.ts.net:8787")
+        self.assertNotIn("secret-key", json.dumps(out))
+        self.assertNotIn("TOVE_TOOLS_KEY", (home / "bridge.env").read_text())       # dry run: nothing written
+
+    def test_places_needs_an_install(self):
+        code, out = run("places", "--bbox", "1,2,3,4", "--dry-run")
+        self.assertEqual((code, "install first" in out["error"]), (1, True))
+
     def test_pair_uses_the_bridge_helper_and_keeps_the_key_out(self):
         home = self.root / "tove"
         (home / "venv" / "bin").mkdir(parents=True)

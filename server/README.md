@@ -25,6 +25,10 @@ The app talks only to the bridge; every credential stays here.
 | `deploy-app.py` | Copies a built web app and/or APK into the data directory, where the bridge serves them at `/app/` and `/downloads/hermes-live.apk`. |
 | `cleanup-voice-fragments.py` | One-off migration for voice chats saved by app builds from before 16 November 2026 (SELF-HOSTING.md §6). |
 | `hermes-image-search/` | Optional Hermes plugin: an `image_search` tool backed by your own SearXNG. |
+| `hermes-places/` | Optional Hermes plugin: a `places_search` tool answered by the bridge from open map data (SELF-HOSTING.md "Local places"). |
+| `places_fetch.py` | Extracts Overture Maps Places for an area into `<data>/places.sqlite` (needs DuckDB, this script only). |
+| `eval/` | Answer-quality eval: realistic questions sent through a scratch bridge to a real Hermes, scored by an LLM judge. See `eval/README.md`. |
+| `fixtures/` | Recorded response shapes (neutral sample data) for the tests. |
 | `test_*.py` | Unit tests, against a fake Hermes and a mocked Codex. Nothing calls a real service. |
 
 ## Run the tests
@@ -35,4 +39,5 @@ venv/bin/pip install -r requirements.txt
 venv/bin/python -m unittest discover -p 'test_*.py'
 ```
 
-This also runs the image-search plugin's tests.
+This also runs the image-search plugin's tests. The places tests build a small extract from `fixtures/` and fake
+Overpass and Photon on loopback.

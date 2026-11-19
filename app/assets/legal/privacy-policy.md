@@ -1,6 +1,6 @@
 # Tove privacy policy
 
-Effective 19 November 2026.
+Effective 19 November 2026 (updated the same day for approximate location and maps).
 
 Tove is an app for talking to an AI assistant that runs on **a server you choose**: your own Tove server (the "bridge")
 and the Hermes Agent behind it, or one that someone you trust runs for you. This policy explains what the app does with
@@ -25,6 +25,10 @@ it. It sends that server:
 - **Dictation audio**, when you use dictation in its default "on your server" mode, so the server can turn it into
   text.
 - **Reports** you make with "Report reply", with the reason and any note you add.
+- **Your approximate location**, only if you turn on Settings › Local answers › "Use my approximate location" (off
+  by default): with each message, a position rounded on your phone to about 1 km. Your server turns it into one line
+  for the assistant (for example "Mylapore, Chennai, IN") and keeps only that line with the message; it is deleted
+  with the message or chat. Turn the setting off at any time.
 - **A random device id** made by the app (not a hardware id), so the server can tell your devices apart for
   notifications and sync, and the app version.
 
@@ -36,6 +40,14 @@ to them.
 OpenAI's real-time voice service). The audio then flows **directly between your device and that provider** over an
 encrypted WebRTC connection. Your server receives the call's transcript and the tasks you ask for, not the audio. The
 microphone is used only while a call or dictation is active, and Android shows that it is in use.
+
+**Third-party services your server may contact for these features.** To label your approximate location, a Tove
+server sends the rounded coordinates (about 1 km) to OpenStreetMap's Nominatim service, unless its operator turned
+this off or uses their own. For "near me" answers it searches its own local copy of open map data (Overture Maps), may
+look up place details through OpenStreetMap's Overpass API and area names through Photon (komoot); these requests
+carry place names and areas, not your identity. Maps in replies load map tiles from OpenStreetMap's tile servers (or
+the server operator's choice) through the app, which reveals the map area shown and your network address to that
+tile server.
 
 **Links and pictures in replies** are fetched by your server, not by your phone, so a reply cannot make your phone
 contact other sites. When you tap a link, it opens in your browser or the app you pick.
@@ -78,9 +90,11 @@ governed by that provider's retention policy.
   Both show a notification while they run, and you can turn instant notifications off in Settings.
 - **Run in the background**: only if you tap "Allow in the background" in Settings › Notifications, Android asks you
   whether to exempt Tove from battery optimisation, so instant notifications stay connected while the phone sleeps.
+- **Approximate location** (coarse only, never precise or in the background): asked for only when you turn on "Use
+  my approximate location" or tap "Use my location" in a reply.
 - **Network, vibration, start at boot** (to restart instant notifications after a restart, only while they are on).
 
-The app does not access your contacts, location, camera (photos are taken by the system camera app only when you
+The app does not access your contacts, precise location, camera (photos are taken by the system camera app only when you
 choose to attach one), call logs or advertising id.
 
 ## No ads, no tracking, no sale

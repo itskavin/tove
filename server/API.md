@@ -249,6 +249,8 @@ Base URL: wherever the operator serves the bridge, always over HTTPS (see `SELF-
 | `task_ui` | Those tasks get the app's UI prompt, so their answer may contain `hermes-ui` blocks |
 | `jobs_after_call` | `/api/job` and `/api/session/{sid}/jobs` still answer after the call has ended |
 | `report` | `POST /api/report` works (see "Reports"): `reasons` it accepts, `note_chars` the note limit |
+| `places` | Local places (see "Places"): `search` (a places database is installed), `attribution`, `release`, `count` and `bbox` of the extract, and the map: `map_tiles` (a `{z}/{x}/{y}` raster URL, or `null` for no tiles) and `map_attribution` (show it on the map) |
+| `location` | `/api/chat` accepts `location` (see "Location") |
 | `pairing` | `POST /api/pair` trades one-time pairing codes for the key (see "Pairing"). Needed before a key exists, so clients just try it; a `404` means an older bridge |
 | `live_backend` | The backend `/api/session` uses now: `codex` or `openai`. `voices` and `default_voice` at the top level are that backend's |
 | `live_backends` | Per backend: `available` (codex: a login exists; openai: a key is set; never the key itself) and `active`, plus the openai limits: `max_call_s`, `daily_minutes` (`null` = no budget) and `minutes_left_today` |
@@ -1356,6 +1358,65 @@ for example CLIProxyAPI's `/v1/realtime`, where a ChatGPT subscription pays and 
 is never written to disk and is dropped when the request ends; only its length and the time taken are logged.
 Measured 16 November 2026 on six synthesised Indian-English phrases: `gpt-4o-transcribe` 1.3% WER (also with
 phone-band noise at 10 dB SNR), `gpt-4o-mini-transcribe` 3 to 4%, `whisper-1` 2.6%; about 1.4 s per clip.
+
+## Places
+
+19 November 2026. Local places from open data, with no API key: a SQLite extract of Overture Maps Places for the
+server's area (`places_fetch.py`, at `PLACES_DB`, default `<data>/places.sqlite`), "near <area>" geocoded with Photon
+(`PLACES_GEOCODER_URL`), and OpenStreetMap details for the results through Overpass (`OVERPASS_URL`). There are no
+ratings in open data; models take them from listing pages and name the source (the `Place` component's
+`ratingSource`). Data: Overture Maps Foundation (CDLA-Permissive-2.0; Foursquare data Apache-2.0; AllThePlaces
+CC0-1.0) and © OpenStreetMap contributors (ODbL).
+
+`POST /api/places/search` with `Authorization: Bearer <TOVE_TOOLS_KEY>` (Hermes' `places_search` plugin) or the app's
+key:
+
+```json
+{"query": "psychiatrist", "near": "13.03,80.27", "radius_m": 5000, "max": 5}
+```
+
+- `query`: what the place is (a category or a name). Words like "near", "best", "open now" are ignored; common words
+  map to Overture's categories (dentist → dental, physio → physical therapy…). Required.
+- `near`: `"lat,lng"`, or an area name (geocoded, cached 30 days). Without it the whole extract is searched.
+- `radius_m` (500–50,000, default 5,000) widens to four times itself when fewer than `max` places match;
+  `max` 1–10 (default 5).
+
+`200`:
+
+```json
+{"query": "psychiatrist", "near": "13.03,80.27", "located": true, "cached": false,
+ "attribution": "Places: Overture Maps Foundation · OpenStreetMap contributors",
+ "places": [{"id": "place:11111111-aaaa-4bbb-8ccc-000000000001", "name": "Sample Mind Clinic",
+             "category": "Psychiatry", "subtitle": "Psychiatry · 12 Example Street",
+             "address": "12 Example Street, Mylapore", "lat": 13.0339, "lng": 80.2686, "distance_km": 0.4,
+             "phone": "+910000000001", "website": "https://clinic.example/adhd", "socials": ["https://…"],
+             "hours": "Mo-Sa 09:00-20:00; Su off", "open_now": true, "wheelchair": "yes",
+             "photo": "https://…", "confidence": 0.92, "sources": "Overture Maps + OpenStreetMap"}]}
+```
+
+- Ranked by text match, Overture's confidence and distance; duplicates (same name and spot) dropped.
+- `hours`, `open_now`, `wheelchair` and `photo` come from the matching OSM element (same name within about 150 m),
+  when there is one. `open_now` is computed at the server's local time for common `opening_hours` forms, else absent.
+  `photo` is an OSM `image` URL or a Wikimedia Commons file; load it through `/api/image`.
+- The OSM lookup is best effort: one Overpass request per search for the uncached results, waiting at most 2.5 s (a
+  slower answer still fills the cache), one request at a time at least a second apart, at most `OVERPASS_DAILY` a day,
+  and none for 5 minutes after a failure. Searches are cached for `PLACES_CACHE_HOURS`, OSM details for 7 days.
+- `located: false` with a `warning` when `near` could not be found on the map.
+- Errors: `400 bad_request`, `401`, `503 unavailable` (no places database).
+
+`GET /api/places/info?id=place:…` (app key) → one place in the same shape, from the extract plus cached OSM details,
+for the app's `Place` cards and `Map` pins. `400 bad_request`, `404 not_found`, `503 unavailable`.
+
+## Location
+
+`/api/chat` takes an optional `location`: `{"lat": 13.0339, "lng": 80.2686, "label": "Mylapore, Chennai, IN"}`
+(capability `location`). The app sends it only when the user turned on "Use my approximate location" (off by
+default), already rounded to about 1 km. The bridge rounds again to two decimals, takes `label` (at most 80
+characters) or makes one with a Nominatim reverse lookup (`LOCATION_GEOCODER_URL`, cached, at most one request a
+second), and adds one line to that user turn for Hermes: `[User's approximate location, shared by the app for this
+message: Mylapore, Chennai, IN; about 13.03, 80.27. …]`. Only that line is kept, in the message's bridge-private
+meta: it never appears in the API, and later turns resend the same history, so Hermes' session stays stable.
+Deleting the message or chat deletes it. `400 bad_request` when `location` is not an object.
 
 ## Entity info
 
