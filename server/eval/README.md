@@ -14,8 +14,14 @@ ChatGPT-style answer would contain.
    ```
 
    Each case is one chat; turns are sent with `"ui": 2`, medium effort and the questions file's sample location
-   (`--location "Label@lat,lng"`, or `--no-location`), with a pause between cases (`--pause`, default 8 s) so the
-   search engines behind Hermes are not flooded. Output: `results.json` (text, timings, tools, usage, and
+   (`--location "Label@lat,lng"`, or `--no-location`), strictly one question at a time.
+
+   **Spare the search engines.** A burst of research questions got SearXNG's upstream engines rate-limited (19
+   November 2026), which broke ordinary chats too. So the runner waits `--pause` seconds (default 25) between
+   questions, and with `--searxng URL` (plus `--searxng-docker CONTAINER` when SearXNG is only reachable from
+   Hermes' network) it makes one cheap JSON query before each question and waits `--engine-wait` (default 600 s)
+   while fewer than `--min-engines` (default 2) engines return results. Re-running into the same `--out` keeps the
+   cases that already have answers. Output: `results.json` (text, timings, tools, usage, and
    `/api/places/info` for any `place:` ids) and one markdown file per case.
 
 2. **Judge** with any OpenAI-compatible model (by default the bridge's title proxy, `TITLE_API_URL`/`TITLE_API_KEY`):

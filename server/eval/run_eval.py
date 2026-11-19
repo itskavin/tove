@@ -134,6 +134,36 @@ def place_infos(base, key, text):
     return out
 
 
+def search_engines(base, container=""):
+    """Web engines that returned results for one cheap SearXNG JSON query, and the unresponsive ones."""
+    url = base.rstrip("/") + "/search?" + urllib.parse.urlencode({"q": "weather", "format": "json"})
+    try:
+        if container:
+            out = subprocess.run(["docker", "exec", container, "curl", "-s", "-m", "15", url], capture_output=True,
+                                 text=True, timeout=30).stdout
+            data = json.loads(out)
+        else:
+            with urllib.request.urlopen(url, timeout=15) as r:
+                data = json.loads(r.read())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return set(), [["searxng", "unreachable"]]
+    engines = {e for r in data.get("results") or [] for e in (r.get("engines") or [r.get("engine")]) if e}
+    return engines, data.get("unresponsive_engines") or []
+
+
+def wait_for_search(args):
+    """Blocks while fewer than --min-engines web engines answer, so an eval never floods a struggling SearXNG."""
+    if not args.searxng:
+        return
+    while True:
+        ok, bad = search_engines(args.searxng, args.searxng_docker)
+        if len(ok) >= args.min_engines:
+            return
+        print("search: %d engines answering (%s), unresponsive %s; waiting %.0f s" % (
+            len(ok), ", ".join(sorted(ok)) or "none", bad, args.engine_wait), flush=True)
+        time.sleep(args.engine_wait)
+
+
 def parse_location(value):
     label, _, coords = value.partition("@")
     lat, _, lng = coords.partition(",")
@@ -153,7 +183,11 @@ def main():
     ap.add_argument("--no-location", action="store_true", help="send no location (as a bridge without it)")
     ap.add_argument("--no-places", action="store_true", help="no places database for the scratch bridge")
     ap.add_argument("--places-db", default="", help="a places_fetch.py extract for the scratch bridge (PLACES_DB)")
-    ap.add_argument("--pause", type=float, default=8.0, help="seconds between cases (spares the search engines)")
+    ap.add_argument("--pause", type=float, default=25.0, help="seconds between questions (spares the search engines)")
+    ap.add_argument("--searxng", default="", help="SearXNG base URL to health-check before each question")
+    ap.add_argument("--searxng-docker", default="", help="check SearXNG from inside this container (docker exec … curl)")
+    ap.add_argument("--min-engines", type=int, default=2, help="wait while fewer web engines answer the check")
+    ap.add_argument("--engine-wait", type=float, default=600, help="seconds to wait before checking again")
     ap.add_argument("--keep-data", action="store_true")
     args = ap.parse_args()
 
@@ -170,15 +204,30 @@ def main():
     port = free_port()
     proc, base, key, caps = start_bridge(args.bridge, args.env, port, data_dir, not args.no_places, args.places_db)
     print("scratch bridge on %s (data %s); places: %s" % (base, data_dir, caps.get("places")), flush=True)
+    old = {}
+    if (out / "results.json").exists():                    # resume: keep cases that already have answers
+        try:
+            prev = json.loads((out / "results.json").read_text())
+            old = {c["id"]: c for c in prev.get("cases", [])
+                   if all(t.get("text") and not t.get("error") for t in c.get("turns", []))}
+        except (OSError, ValueError, KeyError):
+            old = {}
     results = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "bridge": str(args.bridge), "ui": args.ui,
                "effort": args.effort, "location": location, "places": caps.get("places"),
                "location_capability": caps.get("location"), "cases": []}
     try:
-        for n, case in enumerate(cases):
-            if n:
-                time.sleep(args.pause)
+        asked = 0
+        for case in cases:
+            if case["id"] in old:
+                results["cases"].append(old[case["id"]])
+                print("%-20s kept (already answered)" % case["id"], flush=True)
+                continue
             turns, cid = [], None
             for text in case["turns"]:
+                if asked:
+                    time.sleep(args.pause)                 # strictly one question at a time, spaced out
+                wait_for_search(args)
+                asked += 1
                 body = {"message": {"text": text}, "ui": args.ui, "effort": args.effort}
                 if cid:
                     body["conversation_id"] = cid
